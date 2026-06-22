@@ -29,15 +29,59 @@ def style(tag, text=""):
 
 def icon(ok): return f"{style('G', '●')}" if ok else f"{style('R', '○')}"
 
+# ── File logging ────────────────────────────────────────────────────
+_log_file_path = None
+
+def setup_file_logging(rel_path):
+    global _log_file_path
+    path = os.path.expandvars(rel_path)
+    if not os.path.isabs(path):
+        path = os.path.join(BASE_DIR, path)
+    _log_file_path = path
+    if os.path.isfile(path) and os.path.getsize(path) > 1048576:
+        try:
+            os.rename(path, path + ".old")
+        except: pass
+
+def write_file_log(plain):
+    if _log_file_path:
+        try:
+            with open(_log_file_path, "a", encoding="utf-8") as _f:
+                _f.write(plain + "\n")
+        except: pass
+
+MIME_MAP = {
+    ".html": "text/html", ".css": "text/css", ".js": "application/javascript",
+    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml", ".json": "application/json",
+}
+
 # ── Config ────────────────────────────────────────────────────────────
-ASSETS_DIR = os.path.expandvars(r"%USERPROFILE%\Pictures\OBS Assets")
+BASE_DIR = os.path.dirname(__file__)
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+
+CONFIG_DEFAULTS = {
+    "port": 5000,
+    "poll_interval": 5,
+    "twitch_user": "NeoTheFox98",
+    "assets_dir": r"%USERPROFILE%\Pictures\OBS Assets",
+    "log_file": "server.log",
+}
+
+config = dict(CONFIG_DEFAULTS)
+if os.path.isfile(CONFIG_FILE):
+    try:
+        with open(CONFIG_FILE) as _f:
+            config.update(json.load(_f))
+    except Exception as _e:
+        print(f"[config] Failed to load config.json: {_e}")
+
+ASSETS_DIR = os.path.expandvars(config["assets_dir"])
 OVERLAYS_DIR = os.path.join(ASSETS_DIR, "overlays")
-PORT = 5000
-TWITCH_USER = "NeoTheFox98"
-POLL_INTERVAL = 5  # seconds
+TWITCH_USER = config["twitch_user"]
 
 # ── config.env / env vars ────────────────────────────────────────────
-_load_env = os.path.join(os.path.dirname(__file__), ".env")
+_load_env = os.path.join(BASE_DIR, ".env")
 if os.path.isfile(_load_env):
     for _line in open(_load_env):
         _line = _line.strip()
@@ -51,7 +95,8 @@ TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET", "")
 # ── State ─────────────────────────────────────────────────────────────
 state = {
     "obs": {"running": False, "pid": None, "uptime": 0},
-    "twitch": {"live": False, "title": "", "game": "", "viewers": 0, "started_at": "", "uptime": "", "connected": False},
+    "twitch": {"live": False, "title": "", "game": "", "viewers": 0, "started_at": "", "uptime": "", "connected": False,
+               "display_name": "", "profile_image_url": "", "view_count": 0},
     "system": {"cpu": 0, "ram_pct": 0, "ram_used_gb": 0, "ram_total_gb": 0, "gpu": ""},
     "server": {"started_at": time.time(), "uptime": "", "port": 5000},
     "requests": []
@@ -203,6 +248,24 @@ def get_twitch_status():
     except Exception as e:
         print(f"[twitch] Error: {e}")
 
+def get_twitch_user_info():
+    token = _twitch_oauth()
+    if not token: return
+    try:
+        url = f"https://api.twitch.tv/helix/users?login={TWITCH_USER}"
+        req = urllib.request.Request(url, headers={
+            "Client-ID": TWITCH_CLIENT_ID,
+            "Authorization": f"Bearer {token}",
+        })
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read())
+            if data.get("data"):
+                u = data["data"][0]
+                state["twitch"]["display_name"] = u.get("display_name", "")
+                state["twitch"]["profile_image_url"] = u.get("profile_image_url", "")
+                state["twitch"]["view_count"] = u.get("view_count", 0)
+    except: pass
+
 def compute_uptime(ts):
     if not ts: return ""
     delta = int(time.time() - ts)
@@ -215,8 +278,9 @@ def poll_loop():
         get_obs_status()
         get_system_stats()
         get_twitch_status()
+        get_twitch_user_info()
         state["server"]["uptime"] = compute_uptime(state["server"]["started_at"])
-        time.sleep(POLL_INTERVAL)
+        time.sleep(config["poll_interval"])
 
 threading.Thread(target=poll_loop, daemon=True).start()
 
@@ -239,13 +303,15 @@ class Handler(BaseHTTPRequestHandler):
                 "uptime": state["server"]["uptime"],
             }); return
 
-        # Serve overlay files
+        # Serve overlay / asset files
         if self.path.startswith("/overlays/"):
             rel = self.path.lstrip("/")
             filepath = os.path.join(ASSETS_DIR, rel)
             if os.path.isfile(filepath):
-                self.serve_file(filepath, "text/html")
-                self.log(f"Served overlay: {rel}", "→")
+                ext = os.path.splitext(filepath)[1].lower()
+                mime = MIME_MAP.get(ext, "application/octet-stream")
+                self.serve_file(filepath, mime)
+                self.log(f"Served: {rel}", "→")
                 return
 
         self.send_response(404); self.end_headers()
@@ -288,6 +354,7 @@ class Handler(BaseHTTPRequestHandler):
         if len(state["requests"]) > 100:
             state["requests"] = state["requests"][:100]
         print(colored)
+        write_file_log(plain)
 
     def log_message(self, format, *args):
         pass  # suppress default logging
@@ -347,6 +414,9 @@ body {
 .stat-label { font-size: 12px; color: #8b7aa8; margin-top: 2px; }
 .bar-bg { height: 6px; background: rgba(124,58,237,0.1); border-radius: 3px;
   margin-top: 10px; overflow: hidden; }
+.avatar { width: 48px; height: 48px; border-radius: 50%; border: 2px solid rgba(124,58,237,0.4); margin-bottom: 8px; display: block; }
+.clock { font-size: 20px; font-weight: 800; color: #c4b5fd; margin-bottom: 2px; }
+.clock-date { font-size: 10px; color: #6d5a8a; margin-bottom: 8px; }
 .bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s;
   background: linear-gradient(90deg, #7c3aed, #ec4899); }
 .twitch-title { font-size: 13px; color: #f9f5ff; font-weight: 600;
@@ -371,8 +441,11 @@ body {
 </head>
 <body>
 <div class="sidebar">
+  <div class="clock" id="clock">--:--:--</div>
+  <div class="clock-date" id="clock-date">---</div>
+  <img class="avatar" id="avatar" src="" alt="" style="display:none">
   <h1>🎬 Stream Manager</h1>
-  <div class="sub">NeoTheFox98</div>
+  <div class="sub"><span id="display-name">NeoTheFox98</span> · <span id="view-count">0</span> views</div>
   <div class="nav-item active">📊 Overview</div>
   <div class="nav-item">🔌 Overlays</div>
   <div class="nav-item">⚙️ Settings</div>
@@ -439,6 +512,14 @@ body {
 </div>
 
 <script>
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toLocaleTimeString();
+  document.getElementById('clock-date').textContent = now.toLocaleDateString(undefined, { weekday:'long', month:'long', day:'numeric' });
+}
+setInterval(updateClock, 1000);
+updateClock();
+
 function copyUrl(el) {
   const url = window.location.origin + el.querySelector('code').textContent;
   navigator.clipboard.writeText(url).then(() => {
@@ -460,7 +541,7 @@ async function poll() {
     document.getElementById('obs-pid').textContent = s.obs.running ? '●' : '○';
     document.getElementById('obs-uptime').textContent = '';
 
-    // Twitch
+    // Twitch stream
     const twDot = document.getElementById('twitch-dot');
     const twLabel = document.getElementById('twitch-label');
     const twLive = s.twitch.live;
@@ -470,6 +551,19 @@ async function poll() {
     document.getElementById('twitch-game').textContent = s.twitch.game || '—';
     document.getElementById('twitch-viewers').textContent = twLive ? s.twitch.viewers + ' viewers' : '';
     document.getElementById('twitch-uptime').textContent = twLive ? s.twitch.uptime : '';
+
+    // Twitch user info
+    if (s.twitch.display_name) {
+      document.getElementById('display-name').textContent = s.twitch.display_name;
+    }
+    if (s.twitch.view_count) {
+      document.getElementById('view-count').textContent = s.twitch.view_count.toLocaleString();
+    }
+    const avatar = document.getElementById('avatar');
+    if (s.twitch.profile_image_url) {
+      avatar.src = s.twitch.profile_image_url;
+      avatar.style.display = 'block';
+    }
 
     // Twitch API status
     const apiDot = document.getElementById('twitch-api-dot');
@@ -513,7 +607,8 @@ poll();
 # ── CLI ────────────────────────────────────────────────────────────────
 def parse_args():
     p = argparse.ArgumentParser(description="Stream Manager — web dashboard + overlay server + system monitor")
-    p.add_argument("--port", type=int, default=5000, help="Port to listen on (default: 5000)")
+    p.add_argument("--port", type=int, default=0, help="Port to listen on (overrides config.json)")
+    p.add_argument("--poll", type=int, default=0, help="Poll interval in seconds (overrides config.json)")
     p.add_argument("--no-browser", action="store_true", help="Don't open dashboard in browser")
     return p.parse_args()
 
@@ -527,8 +622,14 @@ def find_port(start):
 # ── Main ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     args = parse_args()
-    PORT = find_port(args.port)
+    if args.port:
+        config["port"] = args.port
+    if args.poll:
+        config["poll_interval"] = args.poll
+    PORT = find_port(config["port"])
     state["server"]["port"] = PORT
+
+    setup_file_logging(config["log_file"])
 
     M = style("M", "┃")
     B = style("D", "─")
@@ -549,7 +650,10 @@ if __name__ == "__main__":
     tw_ok = token is not None
     if tw_ok:
         get_twitch_status()
+        get_twitch_user_info()
 
+    dn = state["twitch"]["display_name"] or TWITCH_USER
+    vc = state["twitch"]["view_count"]
     live_str = f"{icon(state['twitch']['live'])} {style('B' if state['twitch']['live'] else 'D', 'LIVE' if state['twitch']['live'] else 'Offline')}"
 
     nav = [
@@ -560,7 +664,7 @@ if __name__ == "__main__":
 
     overlays = []
     if os.path.isdir(OVERLAYS_DIR):
-        overlays = sorted(f for f in os.listdir(OVERLAYS_DIR) if f.endswith(".html"))
+        overlays = sorted(os.listdir(OVERLAYS_DIR))
 
     print()
     print(box_top)
@@ -572,7 +676,7 @@ if __name__ == "__main__":
         print(info(f" {style('D', '→')}", f"{style('W', name):12s}  {style('D', url)}"))
     print(blank_row)
     print(heading("Channels"))
-    print(info("Twitch", f"{style('W', TWITCH_USER):22s} {icon(tw_ok)} {style('G' if tw_ok else 'R', 'Connected' if tw_ok else 'No credentials')}  {live_str}"))
+    print(info("Twitch", f"{style('W', dn):22s} {icon(tw_ok)} {style('G' if tw_ok else 'R', 'Connected' if tw_ok else 'No credentials')}  {live_str}  {style('D', f'{vc:,} views' if vc else '')}"))
     obs_icon = icon(state['obs']['running'])
     obs_str = f"Running (PID {state['obs']['pid']})" if state['obs']['running'] else "Not running"
     print(info("OBS   ", f"{obs_icon} {style('D', obs_str)}"))
@@ -588,11 +692,12 @@ if __name__ == "__main__":
         print(info("", style('Y', "No overlays found")))
     print(blank_row)
     print(heading("Polling"))
-    print(info(f" {style('D', '↻')}", f"{style('D', f'every {POLL_INTERVAL}s')}"))
+    print(info(f" {style('D', '↻')}", f"{style('D', f'every {config["poll_interval"]}s')}"))
     print(box_bot)
     print()
     print(separator)
-    print(f"  {style('D', f'Ctrl+C to stop  ·  --port / --no-browser flags available')}")
+    flags = " --port / --poll / --no-browser"
+    print(f"  {style('D', f'Ctrl+C to stop · config.json · flags:{flags}')}")
     print(separator)
     print()
 

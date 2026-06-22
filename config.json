@@ -1,0 +1,7 @@
+{
+  "port": 5000,
+  "poll_interval": 5,
+  "twitch_user": "NeoTheFox98",
+  "assets_dir": "%USERPROFILE%\\Pictures\\OBS Assets",
+  "log_file": "server.log"
+}
