@@ -3,7 +3,7 @@
 Stream Manager — web dashboard + overlay server + system monitor
 """
 
-import json, os, subprocess, time, threading, urllib.request, urllib.error
+import json, os, subprocess, time, threading, urllib.parse, urllib.request, urllib.error
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
@@ -14,10 +14,22 @@ PORT = 5000
 TWITCH_USER = "NeoTheFox98"
 POLL_INTERVAL = 5  # seconds
 
+# ── config.env / env vars ────────────────────────────────────────────
+_load_env = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.isfile(_load_env):
+    for _line in open(_load_env):
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            k, v = _line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip())
+
+TWITCH_CLIENT_ID = os.environ.get("TWITCH_CLIENT_ID", "")
+TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET", "")
+
 # ── State ─────────────────────────────────────────────────────────────
 state = {
     "obs": {"running": False, "pid": None, "uptime": 0},
-    "twitch": {"live": False, "title": "", "game": "", "viewers": 0},
+    "twitch": {"live": False, "title": "", "game": "", "viewers": 0, "started_at": "", "uptime": "", "connected": False},
     "system": {"cpu": 0, "ram_pct": 0, "ram_used_gb": 0, "ram_total_gb": 0, "gpu": ""},
     "requests": []
 }
@@ -68,19 +80,78 @@ def get_system_stats():
                 state["system"]["ram_used_gb"] = round((total_kb - free_kb) / 1048576, 1)
         except: pass
 
-def get_twitch_status():
+# ── Twitch OAuth & API ──────────────────────────────────────────────────
+_twitch_token = {"access_token": None, "expires_at": 0}
+
+def _twitch_oauth():
+    """Get a valid app access token (client credentials flow)."""
+    now = time.time()
+    if _twitch_token["access_token"] and now < _twitch_token["expires_at"] - 60:
+        return _twitch_token["access_token"]
+    if not TWITCH_CLIENT_ID or not TWITCH_CLIENT_SECRET:
+        return None
+    data = urllib.parse.urlencode({
+        "client_id": TWITCH_CLIENT_ID,
+        "client_secret": TWITCH_CLIENT_SECRET,
+        "grant_type": "client_credentials",
+    }).encode()
     try:
-        url = f"https://api.twitch.tv/helix/search/channels?query={TWITCH_USER}"
-        req = urllib.request.Request(url, headers={"User-Agent": "StreamManager/1.0"})
+        req = urllib.request.Request(
+            "https://id.twitch.tv/oauth2/token", data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            body = json.loads(r.read())
+            _twitch_token["access_token"] = body["access_token"]
+            _twitch_token["expires_at"] = now + body["expires_in"]
+            return _twitch_token["access_token"]
+    except Exception as e:
+        print(f"[twitch] OAuth error: {e}")
+        return None
+
+def get_twitch_status():
+    token = _twitch_oauth()
+    if not token:
+        state["twitch"]["connected"] = False
+        state["twitch"].update({"live": False, "title": "", "game": "", "viewers": 0, "started_at": "", "uptime": ""})
+        return
+    state["twitch"]["connected"] = True
+    try:
+        url = f"https://api.twitch.tv/helix/streams?user_login={TWITCH_USER}"
+        req = urllib.request.Request(url, headers={
+            "Client-ID": TWITCH_CLIENT_ID,
+            "Authorization": f"Bearer {token}",
+        })
         with urllib.request.urlopen(req, timeout=5) as r:
             data = json.loads(r.read())
-            for ch in data.get("data", []):
-                if ch["broadcaster_login"].lower() == TWITCH_USER.lower():
-                    state["twitch"]["live"] = ch.get("is_live", False)
-                    state["twitch"]["title"] = ch.get("title", "")
-                    state["twitch"]["game"] = ch.get("game_name", "")
-                    return
-    except: pass
+            if data.get("data"):
+                s = data["data"][0]
+                state["twitch"]["live"] = True
+                state["twitch"]["title"] = s.get("title", "")
+                state["twitch"]["game"] = s.get("game_name", "")
+                state["twitch"]["viewers"] = s.get("viewer_count", 0)
+                state["twitch"]["started_at"] = s.get("started_at", "")
+                if state["twitch"]["started_at"]:
+                    started = datetime.fromisoformat(state["twitch"]["started_at"].replace("Z", "+00:00"))
+                    delta = datetime.now().astimezone() - started
+                    h, r = divmod(int(delta.total_seconds()), 3600)
+                    m, s_ = divmod(r, 60)
+                    state["twitch"]["uptime"] = f"{h}h {m}m" if h else f"{m}m {s_}s"
+                else:
+                    state["twitch"]["uptime"] = ""
+            else:
+                state["twitch"]["live"] = False
+                state["twitch"]["title"] = ""
+                state["twitch"]["game"] = ""
+                state["twitch"]["viewers"] = 0
+                state["twitch"]["started_at"] = ""
+                state["twitch"]["uptime"] = ""
+    except urllib.error.HTTPError as e:
+        print(f"[twitch] API error {e.code}: {e.read().decode()}")
+        if e.code in (401, 403):
+            _twitch_token["access_token"] = None  # force re-auth
+    except Exception as e:
+        print(f"[twitch] Error: {e}")
 
 def poll_loop():
     while True:
@@ -238,12 +309,17 @@ body {
   <div class="nav-item active">📊 Overview</div>
   <div class="nav-item">🔌 Overlays</div>
   <div class="nav-item">⚙️ Settings</div>
-  <div class="nav-item" style="margin-top:auto;padding-top:16px;border-top:1px solid rgba(124,58,237,0.1)">
-    <div style="font-size:11px;color:#6d5a8a">Server</div>
-    <div style="font-size:12px;color:#8b7aa8;margin-top:2px">
-      ● <span id="server-status">Running</span> :5000
-    </div>
-  </div>
+   <div style="margin-top:auto;padding-top:16px;border-top:1px solid rgba(124,58,237,0.1)">
+     <div style="font-size:11px;color:#6d5a8a">Server</div>
+     <div style="font-size:12px;color:#8b7aa8;margin-top:2px">
+       ● <span id="server-status">Running</span> :5000
+     </div>
+     <div style="font-size:11px;color:#6d5a8a;margin-top:6px">Twitch API</div>
+     <div style="font-size:12px;margin-top:2px">
+       <span class="status-dot" id="twitch-api-dot"></span>
+       <span id="twitch-api-label">Checking...</span>
+     </div>
+   </div>
 </div>
 <div class="main">
   <div class="row">
@@ -259,6 +335,7 @@ body {
       <div class="twitch-title" id="twitch-title">—</div>
       <div class="twitch-game" id="twitch-game">—</div>
       <div class="stat-value" id="twitch-viewers" style="font-size:22px"></div>
+      <div class="stat-label" id="twitch-uptime"></div>
     </div>
     <div class="card">
       <h3>System</h3>
@@ -307,11 +384,19 @@ async function poll() {
     // Twitch
     const twDot = document.getElementById('twitch-dot');
     const twLabel = document.getElementById('twitch-label');
-    twDot.className = 'status-dot ' + (s.twitch.live ? 'on' : 'off');
-    twLabel.textContent = s.twitch.live ? 'LIVE' : 'Offline';
+    const twLive = s.twitch.live;
+    twDot.className = 'status-dot ' + (twLive ? 'on' : 'off');
+    twLabel.textContent = twLive ? 'LIVE' : 'Offline';
     document.getElementById('twitch-title').textContent = s.twitch.title || '—';
     document.getElementById('twitch-game').textContent = s.twitch.game || '—';
-    document.getElementById('twitch-viewers').textContent = s.twitch.live ? s.twitch.viewers + ' viewers' : '';
+    document.getElementById('twitch-viewers').textContent = twLive ? s.twitch.viewers + ' viewers' : '';
+    document.getElementById('twitch-uptime').textContent = twLive ? s.twitch.uptime : '';
+
+    // Twitch API status
+    const apiDot = document.getElementById('twitch-api-dot');
+    const apiLabel = document.getElementById('twitch-api-label');
+    apiDot.className = 'status-dot ' + (s.twitch.connected ? 'on' : 'off');
+    apiLabel.textContent = s.twitch.connected ? 'Connected' : 'No credentials';
 
     // System
     document.getElementById('cpu-pct').textContent = s.system.cpu;
