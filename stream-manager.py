@@ -76,7 +76,13 @@ if os.path.isfile(CONFIG_FILE):
     except Exception as _e:
         print(f"[config] Failed to load config.json: {_e}")
 
-ASSETS_DIR = os.path.expandvars(config["assets_dir"])
+# Validate config
+for _key, _typ in [("poll_interval", (int, float)), ("port", int)]:
+    if not isinstance(config.get(_key), _typ):
+        print(f"[config] {_key} must be {_typ}, got {type(config.get(_key)).__name__}, using default {CONFIG_DEFAULTS[_key]}")
+        config[_key] = CONFIG_DEFAULTS[_key]
+
+ASSETS_DIR = os.path.normpath(os.path.realpath(os.path.expandvars(config["assets_dir"])))
 OVERLAYS_DIR = os.path.join(ASSETS_DIR, "overlays")
 TWITCH_USER = config["twitch_user"]
 
@@ -303,11 +309,11 @@ class Handler(BaseHTTPRequestHandler):
                 "uptime": state["server"]["uptime"],
             }); return
 
-        # Serve overlay / asset files
+        # Serve overlay / asset files (path-traversal safe)
         if self.path.startswith("/overlays/"):
             rel = self.path.lstrip("/")
-            filepath = os.path.join(ASSETS_DIR, rel)
-            if os.path.isfile(filepath):
+            filepath = os.path.normpath(os.path.realpath(os.path.join(ASSETS_DIR, rel)))
+            if os.path.isfile(filepath) and filepath.startswith(ASSETS_DIR):
                 ext = os.path.splitext(filepath)[1].lower()
                 mime = MIME_MAP.get(ext, "application/octet-stream")
                 self.serve_file(filepath, mime)
@@ -612,12 +618,17 @@ def parse_args():
     p.add_argument("--no-browser", action="store_true", help="Don't open dashboard in browser")
     return p.parse_args()
 
-def find_port(start):
+def try_bind_port(start):
+    """Try to bind HTTP server on start..start+19. Returns (server, port) or raises."""
     for port in range(start, start + 20):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            if s.connect_ex(("127.0.0.1", port)) != 0:
-                return port
-    return start
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _s:
+            try:
+                _s.bind(("0.0.0.0", port))
+            except OSError:
+                continue
+        s = HTTPServer(("0.0.0.0", port), Handler)
+        return s, port
+    raise RuntimeError(f"Could not bind to any port in range {start}-{start+19}")
 
 # ── Main ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
@@ -626,10 +637,10 @@ if __name__ == "__main__":
         config["port"] = args.port
     if args.poll:
         config["poll_interval"] = args.poll
-    PORT = find_port(config["port"])
-    state["server"]["port"] = PORT
-
     setup_file_logging(config["log_file"])
+    server, PORT = try_bind_port(config["port"])
+    state["server"]["port"] = PORT
+    server.timeout = 0.5
 
     M = style("M", "┃")
     B = style("D", "─")
@@ -700,9 +711,6 @@ if __name__ == "__main__":
     print(f"  {style('D', f'Ctrl+C to stop · config.json · flags:{flags}')}")
     print(separator)
     print()
-
-    server = HTTPServer(("0.0.0.0", PORT), Handler)
-    server.timeout = 0.5
 
     if not args.no_browser:
         webbrowser.open(f"http://localhost:{PORT}/dashboard")
