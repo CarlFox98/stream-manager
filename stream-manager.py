@@ -58,26 +58,33 @@ def get_system_stats():
         state["system"]["ram_used_gb"] = round(mem.used / (1024**3), 1)
         state["system"]["ram_total_gb"] = round(mem.total / (1024**3), 1)
     except ImportError:
-        # Fallback: WMI
+        # Fallback: PowerShell CIM/WMI
         try:
-            out = subprocess.run(["wmic", "cpu", "get", "loadpercentage"],
-                                 capture_output=True, text=True, timeout=3).stdout
-            lines = [l.strip() for l in out.splitlines() if l.strip().isdigit()]
-            state["system"]["cpu"] = int(lines[0]) if lines else 0
+            out = subprocess.run(
+                ["powershell", "-noprofile", "-command",
+                 "Get-CimInstance Win32_Processor | Select-Object -ExpandProperty LoadPercentage"],
+                capture_output=True, text=True, timeout=5)
+            cpu_str = out.stdout.strip()
+            if cpu_str.isdigit():
+                state["system"]["cpu"] = int(cpu_str)
         except: pass
         try:
-            out = subprocess.run(["wmic", "OS", "get", "FreePhysicalMemory,TotalVisibleMemorySize"],
-                                 capture_output=True, text=True, timeout=3).stdout
-            parts = out.split()
-            for i, p in enumerate(parts):
-                if p.isdigit():
-                    kb = int(p)
-                    if i == 1: total_kb = kb
-                    if i == 2: free_kb = kb
-            if total_kb:
-                state["system"]["ram_total_gb"] = round(total_kb / 1048576, 1)
-                state["system"]["ram_pct"] = round((total_kb - free_kb) / total_kb * 100, 1)
-                state["system"]["ram_used_gb"] = round((total_kb - free_kb) / 1048576, 1)
+            script = (
+                "$os = Get-CimInstance Win32_OperatingSystem; "
+                "$total = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1); "
+                "$free  = [math]::Round($os.FreePhysicalMemory / 1MB, 1); "
+                "$used  = $total - $free; "
+                "$pct   = [math]::Round(($used / $total) * 100, 1); "
+                "Write-Output \"$total|$used|$pct\""
+            )
+            out = subprocess.run(
+                ["powershell", "-noprofile", "-command", script],
+                capture_output=True, text=True, timeout=5)
+            parts = out.stdout.strip().split("|")
+            if len(parts) == 3:
+                state["system"]["ram_total_gb"] = float(parts[0])
+                state["system"]["ram_used_gb"] = float(parts[1])
+                state["system"]["ram_pct"] = float(parts[2])
         except: pass
 
 # ── Twitch OAuth & API ──────────────────────────────────────────────────
@@ -309,17 +316,17 @@ body {
   <div class="nav-item active">📊 Overview</div>
   <div class="nav-item">🔌 Overlays</div>
   <div class="nav-item">⚙️ Settings</div>
-   <div style="margin-top:auto;padding-top:16px;border-top:1px solid rgba(124,58,237,0.1)">
-     <div style="font-size:11px;color:#6d5a8a">Server</div>
-     <div style="font-size:12px;color:#8b7aa8;margin-top:2px">
-       ● <span id="server-status">Running</span> :5000
-     </div>
-     <div style="font-size:11px;color:#6d5a8a;margin-top:6px">Twitch API</div>
-     <div style="font-size:12px;margin-top:2px">
-       <span class="status-dot" id="twitch-api-dot"></span>
-       <span id="twitch-api-label">Checking...</span>
-     </div>
-   </div>
+  <div style="margin-top:auto;padding-top:16px;border-top:1px solid rgba(124,58,237,0.1)">
+    <div style="font-size:11px;color:#6d5a8a">Server</div>
+    <div style="font-size:12px;color:#8b7aa8;margin-top:2px">
+      ● <span id="server-status">Running</span> :5000
+    </div>
+    <div style="font-size:11px;color:#6d5a8a;margin-top:6px">Twitch API</div>
+    <div style="font-size:12px;margin-top:2px">
+      <span class="status-dot" id="twitch-api-dot"></span>
+      <span id="twitch-api-label">Checking...</span>
+    </div>
+  </div>
 </div>
 <div class="main">
   <div class="row">
