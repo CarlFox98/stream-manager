@@ -127,10 +127,21 @@ def get_obs_status():
                 parts = pid_line[0].split()
                 state["obs"]["pid"] = parts[1] if len(parts) > 1 else None
             state["obs"]["running"] = True
+            # Get OBS process uptime via PowerShell
+            try:
+                script = 'try{[math]::Round(((Get-Date)-(Get-Process obs64 -ErrorAction Stop).StartTime).TotalSeconds)}catch{0}'
+                r = subprocess.run(["powershell", "-noprofile", "-command", script],
+                                   capture_output=True, text=True, timeout=5)
+                state["obs"]["uptime"] = int(r.stdout.strip() or 0)
+            except:
+                state["obs"]["uptime"] = 0
         else:
             state["obs"]["running"] = False
             state["obs"]["pid"] = None
-    except: state["obs"]["running"] = False
+            state["obs"]["uptime"] = 0
+    except:
+        state["obs"]["running"] = False
+        state["obs"]["uptime"] = 0
 
 def get_system_stats():
     try:
@@ -399,9 +410,9 @@ body {
 .sidebar .sub { font-size: 11px; color: #6d5a8a; margin-bottom: 12px; }
 .sidebar .nav-item {
   padding: 10px 14px; border-radius: 10px; font-size: 13px; font-weight: 600;
-  color: #8b7aa8; cursor: pointer; transition: all 0.2s;
+  color: #8b7aa8; cursor: default; transition: all 0.2s;
 }
-.sidebar .nav-item:hover, .sidebar .nav-item.active {
+.sidebar .nav-item.active {
   background: rgba(124,58,237,0.15); color: #c4b5fd;
 }
 /* ── Main ── */
@@ -411,11 +422,17 @@ body {
   background: rgba(13,0,22,0.85); border: 1px solid rgba(124,58,237,0.15);
   border-radius: 14px; padding: 20px; flex: 1; min-width: 200px;
   position: relative; overflow: hidden;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.card:hover {
+  border-color: rgba(124,58,237,0.4);
+  box-shadow: 0 4px 24px rgba(124,58,237,0.08);
 }
 .card::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
   background: linear-gradient(90deg, #7c3aed, #a78bfa);
 }
+.card.card-live::before { background: linear-gradient(90deg, #22c55e, #4ade80); }
 .card h3 { font-size: 11px; font-weight: 700; color: #6d5a8a; text-transform: uppercase;
   letter-spacing: 1.5px; margin-bottom: 10px; }
 .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
@@ -442,16 +459,27 @@ body {
 .log-box {
   background: rgba(0,0,0,0.3); border-radius: 8px; padding: 12px; height: 200px;
   overflow-y: auto; font-family: 'Courier New', monospace; font-size: 11px;
-  line-height: 1.6; color: #8b7aa8;
+  line-height: 1.6;
 }
+.log-timestamp { color: #6d5a8a; }
+.log-badge { display: inline-block; width: 14px; text-align: center; margin-right: 4px; font-size: 10px; }
+.log-badge.ok { color: #22c55e; }
+.log-badge.err { color: #ef4444; }
+.log-badge.info { color: #7c3aed; }
+.log-badge.warn { color: #eab308; }
+.log-badge.req { color: #a78bfa; }
+.log-text { color: #8b7aa8; }
 .log-box::-webkit-scrollbar { width: 4px; }
 .log-box::-webkit-scrollbar-thumb { background: #7c3aed; border-radius: 2px; }
 .log-entry { border-bottom: 1px solid rgba(124,58,237,0.05); padding: 2px 0; }
 /* ── Overlay URLs ── */
 .url-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
-.url-item { font-size: 11px; color: #6d5a8a; padding: 4px 8px;
-  background: rgba(0,0,0,0.2); border-radius: 4px; word-break: break-all; }
+.url-item { font-size: 11px; color: #6d5a8a; padding: 6px 10px;
+  background: rgba(0,0,0,0.2); border-radius: 4px; word-break: break-all;
+  cursor: pointer; transition: background 0.2s; }
+.url-item:hover { background: rgba(124,58,237,0.12); }
 .url-item code { color: #a78bfa; }
+.url-item .hint { float: right; font-size: 9px; color: #4a3a6a; margin-top: 1px; }
 </style>
 </head>
 <body>
@@ -459,11 +487,11 @@ body {
   <div class="clock" id="clock">--:--:--</div>
   <div class="clock-date" id="clock-date">---</div>
   <img class="avatar" id="avatar" src="" alt="" style="display:none">
-  <h1>🎬 Stream Manager</h1>
+  <h1>Stream Manager</h1>
   <div class="sub"><span id="display-name">NeoTheFox98</span> · <span id="view-count">0</span> views</div>
-  <div class="nav-item active">📊 Overview</div>
-  <div class="nav-item">🔌 Overlays</div>
-  <div class="nav-item">⚙️ Settings</div>
+  <div class="nav-item active">Overview</div>
+  <div class="nav-item">Overlays</div>
+  <div class="nav-item">Settings</div>
   <div style="margin-top:auto;padding-top:16px;border-top:1px solid rgba(124,58,237,0.1)">
     <div style="font-size:11px;color:#6d5a8a">Server</div>
     <div style="font-size:12px;color:#8b7aa8;margin-top:2px">
@@ -483,13 +511,13 @@ body {
   <div class="row">
     <div class="card">
       <h3>OBS Studio</h3>
-      <div><span class="status-dot" id="obs-dot">●</span><span id="obs-label">Checking...</span></div>
-      <div class="stat-value" id="obs-pid"></div>
-      <div class="stat-label" id="obs-uptime"></div>
+      <div><span class="status-dot" id="obs-dot"></span><span id="obs-label">Checking...</span></div>
+      <div class="stat-value" style="font-size:18px" id="obs-pid"></div>
+      <div class="stat-label" id="obs-uptime">Waiting...</div>
     </div>
     <div class="card">
       <h3>Twitch Stream</h3>
-      <div><span class="status-dot" id="twitch-dot">●</span><span id="twitch-label">Checking...</span></div>
+      <div><span class="status-dot" id="twitch-dot"></span><span id="twitch-label">Checking...</span></div>
       <div class="twitch-title" id="twitch-title">—</div>
       <div class="twitch-game" id="twitch-game">—</div>
       <div class="stat-value" id="twitch-viewers" style="font-size:22px"></div>
@@ -511,10 +539,10 @@ body {
   <div class="card" style="flex:none">
     <h3>Overlay URLs</h3>
     <div class="url-list">
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/starting-soon.html</code></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/be-right-back.html</code></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/stream-ending.html</code></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/tech-difficulties.html</code></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/starting-soon.html</code><span class="hint">Copy</span></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/be-right-back.html</code><span class="hint">Copy</span></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/stream-ending.html</code><span class="hint">Copy</span></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/tech-difficulties.html</code><span class="hint">Copy</span></div>
     </div>
   </div>
 
@@ -543,6 +571,18 @@ function copyUrl(el) {
     setTimeout(() => el.innerHTML = orig, 1200);
   }).catch(() => {});
 }
+function fmtUptime(secs) {
+  if (!secs || secs <= 0) return '';
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+  return h ? h+'h '+m+'m' : m ? m+'m '+s+'s' : s+'s';
+}
+
+function twCard(el) {
+  if (!el) return;
+  const live = document.getElementById('twitch-label')?.textContent === 'LIVE';
+  el.classList.toggle('card-live', live);
+}
+
 async function poll() {
   try {
     const r = await fetch('/api/status');
@@ -552,9 +592,9 @@ async function poll() {
     const obsDot = document.getElementById('obs-dot');
     const obsLabel = document.getElementById('obs-label');
     obsDot.className = 'status-dot ' + (s.obs.running ? 'on' : 'off');
-    obsLabel.textContent = s.obs.running ? 'Running (PID ' + s.obs.pid + ')' : 'Not running';
-    document.getElementById('obs-pid').textContent = s.obs.running ? '●' : '○';
-    document.getElementById('obs-uptime').textContent = '';
+    obsLabel.textContent = s.obs.running ? 'Running' : 'Not running';
+    document.getElementById('obs-pid').textContent = s.obs.running ? 'PID ' + s.obs.pid : '';
+    document.getElementById('obs-uptime').textContent = s.obs.running ? 'Uptime: ' + fmtUptime(s.obs.uptime) : '';
 
     // Twitch stream
     const twDot = document.getElementById('twitch-dot');
@@ -586,6 +626,9 @@ async function poll() {
     apiDot.className = 'status-dot ' + (s.twitch.connected ? 'on' : 'off');
     apiLabel.textContent = s.twitch.connected ? 'Connected' : 'No credentials';
 
+    // Live glow on Twitch card
+    twCard(document.querySelector('.card:nth-child(2)'));
+
     // Server uptime
     document.getElementById('server-uptime').textContent = s.server.uptime || '0s';
     document.getElementById('server-port').textContent = ':' + s.server.port;
@@ -607,7 +650,11 @@ async function poll() {
     // Log
     const logBox = document.getElementById('log-box');
     if (s.requests && s.requests.length) {
-      logBox.innerHTML = s.requests.map(r => '<div class="log-entry">' + r + '</div>').join('');
+      logBox.innerHTML = s.requests.map(r => {
+        const m = r.match(/^\[(\d+:\d+:\d+)\]\s+(.*)/);
+        if (m) return '<div class="log-entry"><span class="log-timestamp">[' + m[1] + ']</span> <span class="log-text">' + m[2] + '</span></div>';
+        return '<div class="log-entry"><span class="log-text">' + r + '</span></div>';
+      }).join('');
     }
   } catch(e) {
     document.getElementById('obs-label').textContent = 'Disconnected';
