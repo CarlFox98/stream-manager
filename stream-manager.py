@@ -3,7 +3,7 @@
 Stream Manager — web dashboard + overlay server + system monitor
 """
 
-import json, os, subprocess, sys, time, threading, urllib.parse, urllib.request, urllib.error
+import argparse, json, os, socket, subprocess, sys, time, threading, urllib.parse, urllib.request, urllib.error, webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
 
@@ -53,6 +53,7 @@ state = {
     "obs": {"running": False, "pid": None, "uptime": 0},
     "twitch": {"live": False, "title": "", "game": "", "viewers": 0, "started_at": "", "uptime": "", "connected": False},
     "system": {"cpu": 0, "ram_pct": 0, "ram_used_gb": 0, "ram_total_gb": 0, "gpu": ""},
+    "server": {"started_at": time.time(), "uptime": "", "port": 5000},
     "requests": []
 }
 
@@ -108,6 +109,26 @@ def get_system_stats():
                 state["system"]["ram_used_gb"] = float(parts[1])
                 state["system"]["ram_pct"] = float(parts[2])
         except: pass
+
+def get_gpu_stats():
+    try:
+        out = subprocess.run(
+            ["powershell", "-noprofile", "-command",
+             "Get-CimInstance Win32_VideoController | "
+             "Where-Object { $_.Name -notlike '*Virtual*' -and $_.Name -notlike '*Remote*' -and $_.Name -notlike '*Basic*' } | "
+             "Select-Object -First 1 | Select-Object -ExpandProperty Name"],
+            capture_output=True, text=True, timeout=5)
+        name = out.stdout.strip()
+        if not name:
+            # fallback: first controller
+            out = subprocess.run(
+                ["powershell", "-noprofile", "-command",
+                 "Get-CimInstance Win32_VideoController | Select-Object -First 1 | Select-Object -ExpandProperty Name"],
+                capture_output=True, text=True, timeout=5)
+            name = out.stdout.strip()
+        if name:
+            state["system"]["gpu"] = name
+    except: pass
 
 # ── Twitch OAuth & API ──────────────────────────────────────────────────
 _twitch_token = {"access_token": None, "expires_at": 0}
@@ -182,11 +203,19 @@ def get_twitch_status():
     except Exception as e:
         print(f"[twitch] Error: {e}")
 
+def compute_uptime(ts):
+    if not ts: return ""
+    delta = int(time.time() - ts)
+    if delta < 60: return f"{delta}s"
+    h, r = divmod(delta, 3600); m, s = divmod(r, 60)
+    return f"{h}h {m}m" if h else f"{m}m {s}s"
+
 def poll_loop():
     while True:
         get_obs_status()
         get_system_stats()
         get_twitch_status()
+        state["server"]["uptime"] = compute_uptime(state["server"]["started_at"])
         time.sleep(POLL_INTERVAL)
 
 threading.Thread(target=poll_loop, daemon=True).start()
@@ -203,6 +232,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/api/status":
             self.serve_json(state); return
+
+        if self.path == "/api/health":
+            self.serve_json({
+                "status": "ok", "port": state["server"]["port"],
+                "uptime": state["server"]["uptime"],
+            }); return
 
         # Serve overlay files
         if self.path.startswith("/overlays/"):
@@ -344,7 +379,10 @@ body {
   <div style="margin-top:auto;padding-top:16px;border-top:1px solid rgba(124,58,237,0.1)">
     <div style="font-size:11px;color:#6d5a8a">Server</div>
     <div style="font-size:12px;color:#8b7aa8;margin-top:2px">
-      ● <span id="server-status">Running</span> :5000
+      ● <span id="server-status">Running</span> <span id="server-port">:5000</span>
+    </div>
+    <div style="font-size:11px;color:#6d5a8a;margin-top:4px" id="server-uptime-row">
+      Uptime: <span id="server-uptime">0s</span>
     </div>
     <div style="font-size:11px;color:#6d5a8a;margin-top:6px">Twitch API</div>
     <div style="font-size:12px;margin-top:2px">
@@ -378,16 +416,17 @@ body {
       </div>
       <div class="bar-bg"><div class="bar-fill" id="ram-bar" style="width:0%"></div></div>
       <div class="stat-label" id="ram-pct-label">0% used</div>
+      <div class="stat-label" style="margin-top:6px">GPU: <span id="gpu-name" style="color:#c4b5fd">—</span></div>
     </div>
   </div>
 
   <div class="card" style="flex:none">
     <h3>Overlay URLs</h3>
     <div class="url-list">
-      <div class="url-item"><code>/overlays/starting-soon.html</code></div>
-      <div class="url-item"><code>/overlays/be-right-back.html</code></div>
-      <div class="url-item"><code>/overlays/stream-ending.html</code></div>
-      <div class="url-item"><code>/overlays/tech-difficulties.html</code></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/starting-soon.html</code></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/be-right-back.html</code></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/stream-ending.html</code></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/tech-difficulties.html</code></div>
     </div>
   </div>
 
@@ -400,6 +439,14 @@ body {
 </div>
 
 <script>
+function copyUrl(el) {
+  const url = window.location.origin + el.querySelector('code').textContent;
+  navigator.clipboard.writeText(url).then(() => {
+    const orig = el.innerHTML;
+    el.innerHTML = '<span style="color:#22c55e">✓ Copied!</span>';
+    setTimeout(() => el.innerHTML = orig, 1200);
+  }).catch(() => {});
+}
 async function poll() {
   try {
     const r = await fetch('/api/status');
@@ -430,6 +477,10 @@ async function poll() {
     apiDot.className = 'status-dot ' + (s.twitch.connected ? 'on' : 'off');
     apiLabel.textContent = s.twitch.connected ? 'Connected' : 'No credentials';
 
+    // Server uptime
+    document.getElementById('server-uptime').textContent = s.server.uptime || '0s';
+    document.getElementById('server-port').textContent = ':' + s.server.port;
+
     // System
     document.getElementById('cpu-pct').textContent = s.system.cpu;
     document.getElementById('cpu-bar').style.width = s.system.cpu + '%';
@@ -439,6 +490,10 @@ async function poll() {
     document.getElementById('ram-total').textContent = s.system.ram_total_gb;
     document.getElementById('ram-bar').style.width = ramPct + '%';
     document.getElementById('ram-pct-label').textContent = ramPct + '% used';
+
+    // GPU
+    const gpuEl = document.getElementById('gpu-name');
+    if (gpuEl && s.system.gpu) gpuEl.textContent = s.system.gpu;
 
     // Log
     const logBox = document.getElementById('log-box');
@@ -455,8 +510,26 @@ poll();
 </body>
 </html>"""
 
+# ── CLI ────────────────────────────────────────────────────────────────
+def parse_args():
+    p = argparse.ArgumentParser(description="Stream Manager — web dashboard + overlay server + system monitor")
+    p.add_argument("--port", type=int, default=5000, help="Port to listen on (default: 5000)")
+    p.add_argument("--no-browser", action="store_true", help="Don't open dashboard in browser")
+    return p.parse_args()
+
+def find_port(start):
+    for port in range(start, start + 20):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(("127.0.0.1", port)) != 0:
+                return port
+    return start
+
 # ── Main ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    args = parse_args()
+    PORT = find_port(args.port)
+    state["server"]["port"] = PORT
+
     M = style("M", "┃")
     B = style("D", "─")
     def heading(text): return f"  {M}  {style('W', style('B', text))}"
@@ -471,6 +544,7 @@ if __name__ == "__main__":
     # Pre-check services
     get_obs_status()
     get_system_stats()
+    get_gpu_stats()
     token = _twitch_oauth()
     tw_ok = token is not None
     if tw_ok:
@@ -481,6 +555,7 @@ if __name__ == "__main__":
     nav = [
         ("Dashboard", f"http://localhost:{PORT}/dashboard"),
         ("API",       f"http://localhost:{PORT}/api/status"),
+        ("Health",    f"http://localhost:{PORT}/api/health"),
     ]
 
     overlays = []
@@ -502,7 +577,8 @@ if __name__ == "__main__":
     obs_str = f"Running (PID {state['obs']['pid']})" if state['obs']['running'] else "Not running"
     print(info("OBS   ", f"{obs_icon} {style('D', obs_str)}"))
     sys_str = f"{state['system']['cpu']}% CPU  ·  {state['system']['ram_used_gb']}/{state['system']['ram_total_gb']} GB RAM"
-    print(info("System", f"{icon(True)} {style('D', sys_str)}"))
+    gpu_name = state['system']['gpu'] or "—"
+    print(info("System", f"{icon(True)} {style('D', sys_str)}  ·  {gpu_name}"))
     print(blank_row)
     print(heading("Overlays"))
     if overlays:
@@ -516,13 +592,19 @@ if __name__ == "__main__":
     print(box_bot)
     print()
     print(separator)
-    print(f"  {style('D', 'Ctrl+C to stop')}")
+    print(f"  {style('D', f'Ctrl+C to stop  ·  --port / --no-browser flags available')}")
     print(separator)
     print()
 
     server = HTTPServer(("0.0.0.0", PORT), Handler)
+    server.timeout = 0.5
+
+    if not args.no_browser:
+        webbrowser.open(f"http://localhost:{PORT}/dashboard")
+
     try:
-        server.serve_forever()
+        while True:
+            server.handle_request()
     except KeyboardInterrupt:
         print(f"\n  {style('Y', 'Shutdown.')}")
         server.server_close()
