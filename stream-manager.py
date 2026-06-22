@@ -3,9 +3,31 @@
 Stream Manager — web dashboard + overlay server + system monitor
 """
 
-import json, os, subprocess, time, threading, urllib.parse, urllib.request, urllib.error
+import json, os, subprocess, sys, time, threading, urllib.parse, urllib.request, urllib.error
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from datetime import datetime
+
+# ── Terminal styling ──────────────────────────────────────────
+def _init_ansi():
+    if os.name == "nt":
+        os.system("")                              # enable VT processing
+        os.system("chcp 65001 >nul 2>&1")          # UTF-8 codepage
+        try:
+            sys.stdout.reconfigure(encoding="utf-8")
+        except AttributeError:
+            pass  # Python < 3.7
+_init_ansi()
+
+S = {
+    "R": "\033[0m", "B": "\033[1m", "D": "\033[90m",
+    "G": "\033[92m", "Y": "\033[93m", "C": "\033[96m",
+    "M": "\033[95m", "W": "\033[97m",
+}
+
+def style(tag, text=""):
+    return f"{S.get(tag, '')}{text}{S['R']}"
+
+def icon(ok): return f"{style('G', '●')}" if ok else f"{style('R', '○')}"
 
 # ── Config ────────────────────────────────────────────────────────────
 ASSETS_DIR = os.path.expandvars(r"%USERPROFILE%\Pictures\OBS Assets")
@@ -188,7 +210,7 @@ class Handler(BaseHTTPRequestHandler):
             filepath = os.path.join(ASSETS_DIR, rel)
             if os.path.isfile(filepath):
                 self.serve_file(filepath, "text/html")
-                self.log(f"Served overlay: {rel}")
+                self.log(f"Served overlay: {rel}", "→")
                 return
 
         self.send_response(404); self.end_headers()
@@ -201,7 +223,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", len(html.encode()))
         self.end_headers()
         self.wfile.write(html.encode())
-        self.log("Served dashboard")
+        self.log("Served dashboard", "→")
 
     def serve_json(self, data):
         body = json.dumps(data).encode()
@@ -221,13 +243,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def log(self, msg):
+    def log(self, msg, kind="~"):
         ts = datetime.now().strftime("%H:%M:%S")
-        entry = f"[{ts}] {msg}"
-        state["requests"].insert(0, entry)
+        prefix = {"~": style("D", "~"), "✓": style("G", "✓"), "✗": style("R", "✗"),
+                  "→": style("C", "→"), "!": style("Y", "!")}.get(kind, style("D", "~"))
+        plain = f"[{ts}] {msg}"
+        colored = f"{style('D', f'[{ts}]')} {prefix} {msg}"
+        state["requests"].insert(0, plain)
         if len(state["requests"]) > 100:
             state["requests"] = state["requests"][:100]
-        print(entry)
+        print(colored)
 
     def log_message(self, format, *args):
         pass  # suppress default logging
@@ -432,13 +457,72 @@ poll();
 
 # ── Main ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print(f"🎬 Stream Manager starting on http://localhost:{PORT}")
-    print(f"📊 Dashboard: http://localhost:{PORT}/dashboard")
-    print(f"🔌 Overlays served from: {OVERLAYS_DIR}")
-    print("─" * 50)
+    M = style("M", "┃")
+    B = style("D", "─")
+    def heading(text): return f"  {M}  {style('W', style('B', text))}"
+    def info(k, v):   return f"  {M}    {style('C', k)}  {v}"
+
+    box_top    = f"  {style('M', '┏')}{B*58}{style('M', '┓')}"
+    box_bot    = f"  {style('M', '┗')}{B*58}{style('M', '┛')}"
+    box_div    = f"  {style('M', '┣')}{B*58}{style('M', '┫')}"
+    separator  = f"  {style('D', '─')*60}"
+    blank_row  = f"  {M}  {'':55s}{M}"
+
+    # Pre-check services
+    get_obs_status()
+    get_system_stats()
+    token = _twitch_oauth()
+    tw_ok = token is not None
+    if tw_ok:
+        get_twitch_status()
+
+    live_str = f"{icon(state['twitch']['live'])} {style('B' if state['twitch']['live'] else 'D', 'LIVE' if state['twitch']['live'] else 'Offline')}"
+
+    nav = [
+        ("Dashboard", f"http://localhost:{PORT}/dashboard"),
+        ("API",       f"http://localhost:{PORT}/api/status"),
+    ]
+
+    overlays = []
+    if os.path.isdir(OVERLAYS_DIR):
+        overlays = sorted(f for f in os.listdir(OVERLAYS_DIR) if f.endswith(".html"))
+
+    print()
+    print(box_top)
+    print(f"  {M}  {style('M', style('B', '▄▄  Stream Manager'))}       {style('D', 'Web dashboard + overlay server + system monitor')}  {M}")
+    print(box_div)
+    print(heading("Server"))
+    print(info("●", f"http://localhost:{PORT}"))
+    for name, url in nav:
+        print(info(f" {style('D', '→')}", f"{style('W', name):12s}  {style('D', url)}"))
+    print(blank_row)
+    print(heading("Channels"))
+    print(info("Twitch", f"{style('W', TWITCH_USER):22s} {icon(tw_ok)} {style('G' if tw_ok else 'R', 'Connected' if tw_ok else 'No credentials')}  {live_str}"))
+    obs_icon = icon(state['obs']['running'])
+    obs_str = f"Running (PID {state['obs']['pid']})" if state['obs']['running'] else "Not running"
+    print(info("OBS   ", f"{obs_icon} {style('D', obs_str)}"))
+    sys_str = f"{state['system']['cpu']}% CPU  ·  {state['system']['ram_used_gb']}/{state['system']['ram_total_gb']} GB RAM"
+    print(info("System", f"{icon(True)} {style('D', sys_str)}"))
+    print(blank_row)
+    print(heading("Overlays"))
+    if overlays:
+        for ov in overlays:
+            print(info(f" {style('D', '▸')}", style('D', f"/overlays/{ov}")))
+    else:
+        print(info("", style('Y', "No overlays found")))
+    print(blank_row)
+    print(heading("Polling"))
+    print(info(f" {style('D', '↻')}", f"{style('D', f'every {POLL_INTERVAL}s')}"))
+    print(box_bot)
+    print()
+    print(separator)
+    print(f"  {style('D', 'Ctrl+C to stop')}")
+    print(separator)
+    print()
+
     server = HTTPServer(("0.0.0.0", PORT), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nShutdown.")
+        print(f"\n  {style('Y', 'Shutdown.')}")
         server.server_close()
