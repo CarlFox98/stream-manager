@@ -2,6 +2,7 @@
 """
 Stream Manager — web dashboard + overlay server + system monitor
 """
+__version__ = "0.1.0"
 
 import argparse, json, os, socket, subprocess, sys, time, threading, urllib.parse, urllib.request, urllib.error, webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -80,6 +81,14 @@ if os.path.isfile(CONFIG_FILE):
 for _key, _typ in [("poll_interval", (int, float)), ("port", int)]:
     if not isinstance(config.get(_key), _typ):
         print(f"[config] {_key} must be {_typ}, got {type(config.get(_key)).__name__}, using default {CONFIG_DEFAULTS[_key]}")
+        config[_key] = CONFIG_DEFAULTS[_key]
+for _key, _val in list(config.items()):
+    if _key not in CONFIG_DEFAULTS:
+        print(f"[config] Unknown key '{_key}' in config.json, ignoring")
+        del config[_key]
+for _key in CONFIG_DEFAULTS:
+    if _key not in config:
+        print(f"[config] Missing key '{_key}' in config.json, using default: {CONFIG_DEFAULTS[_key]}")
         config[_key] = CONFIG_DEFAULTS[_key]
 
 ASSETS_DIR = os.path.normpath(os.path.realpath(os.path.expandvars(config["assets_dir"])))
@@ -616,6 +625,7 @@ def parse_args():
     p.add_argument("--port", type=int, default=0, help="Port to listen on (overrides config.json)")
     p.add_argument("--poll", type=int, default=0, help="Poll interval in seconds (overrides config.json)")
     p.add_argument("--no-browser", action="store_true", help="Don't open dashboard in browser")
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p.parse_args()
 
 def try_bind_port(start):
@@ -679,7 +689,8 @@ if __name__ == "__main__":
 
     print()
     print(box_top)
-    print(f"  {M}  {style('M', style('B', '▄▄  Stream Manager'))}       {style('D', 'Web dashboard + overlay server + system monitor')}  {M}")
+    ver = style('D', f'v{__version__}')
+    print(f"  {M}  {style('M', style('B', '▄▄  Stream Manager'))}  {ver}     {style('D', 'Web dashboard + overlay server + system monitor')}  {M}")
     print(box_div)
     print(heading("Server"))
     print(info("●", f"http://localhost:{PORT}"))
