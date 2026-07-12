@@ -195,6 +195,128 @@ def apply_scene_set(name):
     except Exception as e:
         return False, f"Failed to switch scene set: {e}"
 
+# ── Update checking / self-update ─────────────────────────────────────
+# Checks GitHub Releases for a newer tagged version and can download +
+# install it, but NEVER installs without explicit confirmation. The running
+# file is backed up before any swap, and the download is validated as real
+# Python before it's allowed to replace anything.
+GITHUB_OWNER = "CarlFox98"
+GITHUB_REPO = "stream-manager"
+GITHUB_API_LATEST = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
+UPDATE_ASSET_NAME = "stream-manager.py"   # the release asset (or raw file) to fetch
+SELF_PATH = os.path.abspath(__file__)
+
+update_state = {"checked": False, "latest": None, "current": __version__,
+                "available": False, "error": None, "notes": ""}
+
+def _parse_version(v):
+    """'v1.2.3' or '1.2.3' -> (1,2,3). Non-numeric parts sort as 0."""
+    v = (v or "").lstrip("vV").strip()
+    parts = []
+    for chunk in v.split("."):
+        num = ""
+        for ch in chunk:
+            if ch.isdigit(): num += ch
+            else: break
+        parts.append(int(num) if num else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
+def _http_get(url, accept=None, timeout=8):
+    req = urllib.request.Request(url, headers={
+        "User-Agent": f"stream-manager/{__version__}",
+        "Accept": accept or "*/*",
+    })
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+def check_for_update():
+    """Query GitHub Releases. Populates update_state. Read-only, never writes."""
+    update_state["checked"] = True
+    update_state["error"] = None
+    try:
+        data = json.loads(_http_get(GITHUB_API_LATEST, accept="application/vnd.github+json"))
+        tag = data.get("tag_name") or ""
+        update_state["latest"] = tag
+        update_state["notes"] = (data.get("body") or "").strip()[:500]
+        # find the download URL for our asset, else fall back to the raw tag file
+        dl = None
+        for asset in data.get("assets", []):
+            if asset.get("name") == UPDATE_ASSET_NAME:
+                dl = asset.get("browser_download_url"); break
+        if not dl and tag:
+            dl = f"https://raw.githubusercontent.com/{GITHUB_OWNER}/{GITHUB_REPO}/{tag}/{UPDATE_ASSET_NAME}"
+        update_state["download_url"] = dl
+        update_state["available"] = bool(tag) and _parse_version(tag) > _parse_version(__version__)
+        return update_state
+    except urllib.error.HTTPError as e:
+        update_state["error"] = f"GitHub returned HTTP {e.code}" + (" (no releases yet?)" if e.code == 404 else "")
+    except Exception as e:
+        update_state["error"] = str(e)
+    update_state["available"] = False
+    return update_state
+
+def _validate_python_source(text):
+    """Reject anything that isn't a plausible, parseable stream-manager.py."""
+    if not text or len(text) < 500:
+        return False, "Downloaded file is too small to be valid"
+    if "__version__" not in text or "Stream Manager" not in text:
+        return False, "Downloaded file doesn't look like stream-manager.py"
+    try:
+        import ast as _ast
+        _ast.parse(text)
+    except SyntaxError as e:
+        return False, f"Downloaded file has a syntax error: {e}"
+    return True, "ok"
+
+def download_update():
+    """
+    Download the new version to a staging file next to the current one.
+    Returns (ok, message, staged_path|None). Does NOT install.
+    """
+    url = update_state.get("download_url")
+    if not url:
+        return False, "No download URL — run a version check first", None
+    try:
+        raw = _http_get(url).decode("utf-8", "replace")
+    except Exception as e:
+        return False, f"Download failed: {e}", None
+    ok, why = _validate_python_source(raw)
+    if not ok:
+        return False, why, None
+    staged = SELF_PATH + ".new"
+    try:
+        with open(staged, "w", encoding="utf-8", newline="\n") as f:
+            f.write(raw)
+    except OSError as e:
+        return False, f"Could not write staged file: {e}", None
+    return True, f"Downloaded {update_state.get('latest')} to {os.path.basename(staged)}", staged
+
+def install_update(staged_path):
+    """
+    Back up the current file and swap in the staged one. Caller is responsible
+    for having obtained confirmation first. Returns (ok, message).
+    """
+    if not staged_path or not os.path.isfile(staged_path):
+        return False, "No staged update found — download first"
+    # Re-validate the staged file right before install (belt and suspenders)
+    try:
+        with open(staged_path, encoding="utf-8") as f:
+            ok, why = _validate_python_source(f.read())
+        if not ok:
+            return False, f"Refusing to install: {why}"
+    except OSError as e:
+        return False, f"Could not read staged file: {e}"
+    backup = SELF_PATH + ".bak"
+    try:
+        shutil.copy2(SELF_PATH, backup)          # backup current
+        shutil.copy2(staged_path, SELF_PATH)     # swap in new
+        os.remove(staged_path)                   # clean staging
+        return True, f"Installed update. Previous version backed up to {os.path.basename(backup)}. Restart to apply."
+    except Exception as e:
+        return False, f"Install failed ({e}); your current file is unchanged"
+
 # ── config.env / env vars ────────────────────────────────────────────
 _load_env = os.path.join(BASE_DIR, ".env")
 if os.path.isfile(_load_env):
@@ -435,6 +557,16 @@ class Handler(BaseHTTPRequestHandler):
             state["scenes"]["active_set"] = detect_active_set()
             self.serve_json(state["scenes"]); return
 
+        if self.path == "/api/update":
+            check_for_update()
+            self.serve_json({
+                "current": update_state["current"],
+                "latest": update_state["latest"],
+                "available": update_state["available"],
+                "error": update_state["error"],
+                "notes": update_state["notes"],
+            }); return
+
         # Serve overlay / asset files (path-traversal safe)
         if self.path.startswith("/overlays/"):
             rel = self.path.lstrip("/")
@@ -468,6 +600,34 @@ class Handler(BaseHTTPRequestHandler):
                 "active_set": state["scenes"]["active_set"],
                 "available": state["scenes"]["available"],
             }, status=200 if ok else 400)
+            return
+
+        if self.path == "/api/update/install":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length) if length else b"{}"
+                body = json.loads(raw.decode("utf-8") or "{}")
+            except (ValueError, json.JSONDecodeError):
+                self.serve_json({"ok": False, "error": "Invalid request body"}, status=400); return
+
+            # Require explicit confirmation — never install on a bare request
+            if body.get("confirm") is not True:
+                self.serve_json({"ok": False, "error": "Confirmation required (confirm: true)"}, status=400); return
+
+            check_for_update()
+            if not update_state.get("available"):
+                self.serve_json({"ok": False, "error": "No newer version available"}, status=400); return
+
+            ok, msg, staged = download_update()
+            if not ok:
+                self.log(f"Update download failed: {msg}", "✗")
+                self.serve_json({"ok": False, "error": msg}, status=400); return
+
+            ok, msg = install_update(staged)
+            self.log(msg, "✓" if ok else "✗")
+            self.serve_json({"ok": ok, "message": msg,
+                             "installed_version": update_state.get("latest") if ok else None},
+                            status=200 if ok else 400)
             return
 
         self.send_response(404); self.end_headers()
@@ -630,6 +790,20 @@ body {
 .scene-msg { font-size: 11px; margin-top: 10px; min-height: 14px; color: #6d5a8a; }
 .scene-msg.ok { color: #22c55e; }
 .scene-msg.err { color: #f87171; }
+/* ── Update notice ── */
+.update-card { display: none; border-color: rgba(245,158,11,0.4) !important; }
+.update-card.show { display: block; }
+.update-card h3 { color: #f59e0b; }
+.update-ver { font-size: 15px; font-weight: 700; color: #fbbf24; margin: 4px 0 2px; }
+.update-sub { font-size: 11px; color: #6d5a8a; margin-bottom: 12px; }
+.update-btn {
+  padding: 9px 18px; border-radius: 10px; font-family: inherit; font-size: 13px;
+  font-weight: 700; cursor: pointer; color: #1a1200;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b); border: none;
+}
+.update-btn:disabled { opacity: 0.6; cursor: default; }
+.update-msg { font-size: 11px; margin-top: 10px; min-height: 14px; color: #6d5a8a; }
+.update-msg.ok { color: #22c55e; } .update-msg.err { color: #f87171; }
 </style>
 </head>
 <body>
@@ -684,6 +858,14 @@ body {
       <div class="stat-label" id="ram-pct-label">0% used</div>
       <div class="stat-label" style="margin-top:6px">GPU: <span id="gpu-name" style="color:#c4b5fd">—</span></div>
     </div>
+  </div>
+
+  <div class="card update-card" id="update-card" style="flex:none">
+    <h3>Update Available</h3>
+    <div class="update-ver" id="update-ver">—</div>
+    <div class="update-sub">A newer version is on GitHub. Your current file is backed up before installing.</div>
+    <button class="update-btn" id="update-btn" onclick="installUpdate()">Download &amp; Install</button>
+    <div class="update-msg" id="update-msg"></div>
   </div>
 
   <div class="card" style="flex:none">
@@ -801,6 +983,47 @@ async function pollScenes() {
 setInterval(pollScenes, 4000);
 pollScenes();
 
+let updateInfo = null;
+async function checkUpdate() {
+  try {
+    const r = await fetch('/api/update');
+    const d = await r.json();
+    updateInfo = d;
+    const card = document.getElementById('update-card');
+    if (d.available && d.latest) {
+      document.getElementById('update-ver').textContent = d.latest + '  (current v' + d.current + ')';
+      card.classList.add('show');
+    } else {
+      card.classList.remove('show');
+    }
+  } catch (e) { /* offline check — ignore */ }
+}
+async function installUpdate() {
+  if (!updateInfo || !updateInfo.available) return;
+  const ok = confirm('Download and install ' + updateInfo.latest + '?\n\nYour current file will be backed up to stream-manager.py.bak. You\'ll need to restart Stream Manager afterward.');
+  if (!ok) return;
+  const btn = document.getElementById('update-btn');
+  const msg = document.getElementById('update-msg');
+  btn.disabled = true; msg.className = 'update-msg'; msg.textContent = 'Downloading & installing…';
+  try {
+    const r = await fetch('/api/update/install', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirm: true })
+    });
+    const d = await r.json();
+    msg.textContent = d.message || d.error || (d.ok ? 'Installed.' : 'Failed.');
+    msg.classList.add(d.ok ? 'ok' : 'err');
+    if (d.ok) msg.textContent += ' Restart Stream Manager to apply.';
+    else btn.disabled = false;
+  } catch (e) {
+    msg.className = 'update-msg err'; msg.textContent = 'Install request failed.';
+    btn.disabled = false;
+  }
+}
+// Check on load, then hourly (GitHub check is cheap and read-only)
+checkUpdate();
+setInterval(checkUpdate, 3600000);
+
 async function poll() {
   try {
     const r = await fetch('/api/status');
@@ -890,6 +1113,8 @@ def parse_args():
     p.add_argument("--port", type=int, default=0, help="Port to listen on (overrides config.json)")
     p.add_argument("--poll", type=int, default=0, help="Poll interval in seconds (overrides config.json)")
     p.add_argument("--no-browser", action="store_true", help="Don't open dashboard in browser")
+    p.add_argument("--check-update", action="store_true", help="Check GitHub for a newer version and exit")
+    p.add_argument("--update", action="store_true", help="Check, then (after confirmation) download & install the latest version")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p.parse_args()
 
@@ -908,6 +1133,39 @@ def try_bind_port(start):
 # ── Main ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     args = parse_args()
+
+    # ── Update flags (handled before starting the server) ──
+    if args.check_update or args.update:
+        print(f"\n  {style('C', 'Checking for updates…')}  (current v{__version__})")
+        check_for_update()
+        if update_state["error"]:
+            print(f"  {style('R', '✗')} Update check failed: {update_state['error']}\n")
+            sys.exit(1)
+        if not update_state["available"]:
+            print(f"  {style('G', '✓')} You're on the latest version (v{__version__}).\n")
+            sys.exit(0)
+        latest = update_state["latest"]
+        print(f"  {style('Y', '●')} New version available: {style('B', latest)}  (you have v{__version__})")
+        if update_state["notes"]:
+            print(f"  {style('D', 'Release notes:')}\n{update_state['notes']}")
+        if args.check_update and not args.update:
+            print(f"\n  Run {style('W', 'python stream-manager.py --update')} to install it.\n")
+            sys.exit(0)
+        # --update: confirm, then download + install
+        try:
+            ans = input(f"\n  Download and install {latest}? Your current file will be backed up. [y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            ans = "n"
+        if ans not in ("y", "yes"):
+            print("  Update cancelled.\n"); sys.exit(0)
+        ok, msg, staged = download_update()
+        if not ok:
+            print(f"  {style('R', '✗')} {msg}\n"); sys.exit(1)
+        ok, msg = install_update(staged)
+        mark = style('G', '✓') if ok else style('R', '✗')
+        print(f"  {mark} {msg}\n")
+        sys.exit(0 if ok else 1)
+
     if args.port:
         config["port"] = args.port
     if args.poll:
@@ -946,6 +1204,7 @@ if __name__ == "__main__":
         ("Dashboard", f"http://localhost:{PORT}/dashboard"),
         ("API",       f"http://localhost:{PORT}/api/status"),
         ("Scenes",    f"http://localhost:{PORT}/api/scenes"),
+        ("Update",    f"http://localhost:{PORT}/api/update"),
         ("Health",    f"http://localhost:{PORT}/api/health"),
     ]
 
@@ -1003,10 +1262,18 @@ if __name__ == "__main__":
     print(box_bot)
     print()
     print(separator)
-    flags = " --port / --poll / --no-browser"
+    flags = " --port / --poll / --no-browser / --check-update / --update"
     print(f"  {style('D', f'Ctrl+C to stop · config.json · flags:{flags}')}")
     print(separator)
     print()
+
+    # Non-blocking startup update check — a slow/failed GitHub call never delays startup
+    def _bg_update_check():
+        check_for_update()
+        if update_state.get("available"):
+            msg = f"Update available: {update_state['latest']} (you have v{__version__}) — run --update or use the dashboard"
+            print(f"  {style('Y', '●')} {style('Y', msg)}\n")
+    threading.Thread(target=_bg_update_check, daemon=True).start()
 
     if not args.no_browser:
         webbrowser.open(f"http://localhost:{PORT}/dashboard")
