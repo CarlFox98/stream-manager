@@ -95,6 +95,106 @@ ASSETS_DIR = os.path.normpath(os.path.realpath(os.path.expandvars(config["assets
 OVERLAYS_DIR = os.path.join(ASSETS_DIR, "overlays")
 TWITCH_USER = config["twitch_user"]
 
+# ── Scene sets ────────────────────────────────────────────────────────
+# Layout on disk:
+#   overlays/modern/   full set of scene .html files (modern neon theme)
+#   overlays/retro/    full set of scene .html files (retro Win98 theme)
+#   overlays/active/   a copy of whichever set is currently live
+# OBS points at /overlays/active/<scene>.html and never changes; switching
+# a set means replacing the contents of active/ with the chosen set.
+import hashlib, shutil
+
+SCENE_SETS = ["modern", "retro"]
+ACTIVE_DIRNAME = "active"
+ACTIVE_DIR = os.path.join(OVERLAYS_DIR, ACTIVE_DIRNAME)
+# Manifest records which set was last applied to active/ (source of truth).
+ACTIVE_MANIFEST = os.path.join(ACTIVE_DIR, ".active-set")
+
+def set_dir(name):
+    return os.path.join(OVERLAYS_DIR, name)
+
+def available_sets():
+    """Return the subset of SCENE_SETS that actually exist on disk with files."""
+    out = []
+    for name in SCENE_SETS:
+        d = set_dir(name)
+        if os.path.isdir(d) and any(f.lower().endswith(".html") for f in os.listdir(d)):
+            out.append(name)
+    return out
+
+def _dir_signature(d):
+    """Stable hash of a directory's *.html filenames + contents, for fallback detection."""
+    if not os.path.isdir(d):
+        return None
+    h = hashlib.sha256()
+    for fn in sorted(os.listdir(d)):
+        if not fn.lower().endswith(".html"):
+            continue
+        h.update(fn.encode("utf-8"))
+        try:
+            with open(os.path.join(d, fn), "rb") as f:
+                h.update(f.read())
+        except OSError:
+            pass
+    return h.hexdigest()
+
+def detect_active_set():
+    """
+    Return the name of the set currently in active/, or None if unknown/empty.
+    Prefers the manifest; falls back to content-matching against known sets.
+    """
+    if not os.path.isdir(ACTIVE_DIR):
+        return None
+    # 1. Trust the manifest if present and valid
+    try:
+        with open(ACTIVE_MANIFEST, encoding="utf-8") as f:
+            name = f.read().strip()
+        if name in SCENE_SETS:
+            return name
+    except OSError:
+        pass
+    # 2. Fallback: match active/ contents against each known set
+    active_sig = _dir_signature(ACTIVE_DIR)
+    if active_sig:
+        for name in SCENE_SETS:
+            if _dir_signature(set_dir(name)) == active_sig:
+                return name
+    return None
+
+def apply_scene_set(name):
+    """
+    Copy overlays/<name>/ into overlays/active/, replacing it, and write the
+    manifest. Returns (ok, message). Never raises to the caller.
+    """
+    if name not in SCENE_SETS:
+        return False, f"Unknown scene set '{name}'"
+    src = set_dir(name)
+    if not os.path.isdir(src):
+        return False, f"Scene set '{name}' not found on disk"
+    try:
+        os.makedirs(ACTIVE_DIR, exist_ok=True)
+        # Clear existing active/ contents (files + subdirs), keep the dir itself
+        for entry in os.listdir(ACTIVE_DIR):
+            p = os.path.join(ACTIVE_DIR, entry)
+            if os.path.isdir(p) and not os.path.islink(p):
+                shutil.rmtree(p, ignore_errors=True)
+            else:
+                try: os.remove(p)
+                except OSError: pass
+        # Copy the chosen set in
+        for entry in os.listdir(src):
+            s = os.path.join(src, entry)
+            d = os.path.join(ACTIVE_DIR, entry)
+            if os.path.isdir(s):
+                shutil.copytree(s, d)
+            else:
+                shutil.copy2(s, d)
+        with open(ACTIVE_MANIFEST, "w", encoding="utf-8") as f:
+            f.write(name)
+        return True, f"Switched active scene set to '{name}'"
+    except Exception as e:
+        return False, f"Failed to switch scene set: {e}"
+
 # ── config.env / env vars ────────────────────────────────────────────
 _load_env = os.path.join(BASE_DIR, ".env")
 if os.path.isfile(_load_env):
@@ -114,6 +214,7 @@ state = {
                "display_name": "", "profile_image_url": "", "view_count": 0},
     "system": {"cpu": 0, "ram_pct": 0, "ram_used_gb": 0, "ram_total_gb": 0, "gpu": ""},
     "server": {"started_at": time.time(), "uptime": "", "port": 5000},
+    "scenes": {"active_set": None, "available": []},
     "requests": []
 }
 
@@ -329,6 +430,11 @@ class Handler(BaseHTTPRequestHandler):
                 "uptime": state["server"]["uptime"],
             }); return
 
+        if self.path == "/api/scenes":
+            state["scenes"]["available"] = available_sets()
+            state["scenes"]["active_set"] = detect_active_set()
+            self.serve_json(state["scenes"]); return
+
         # Serve overlay / asset files (path-traversal safe)
         if self.path.startswith("/overlays/"):
             rel = self.path.lstrip("/")
@@ -343,6 +449,30 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(404); self.end_headers()
         self.wfile.write(b"Not found")
 
+    def do_POST(self):
+        if self.path == "/api/scenes/switch":
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(length) if length else b"{}"
+                body = json.loads(raw.decode("utf-8") or "{}")
+            except (ValueError, json.JSONDecodeError):
+                self.serve_json({"ok": False, "error": "Invalid request body"}, status=400); return
+
+            name = body.get("set", "")
+            ok, msg = apply_scene_set(name)
+            state["scenes"]["available"] = available_sets()
+            state["scenes"]["active_set"] = detect_active_set()
+            self.log(msg, "✓" if ok else "✗")
+            self.serve_json({
+                "ok": ok, "message": msg,
+                "active_set": state["scenes"]["active_set"],
+                "available": state["scenes"]["available"],
+            }, status=200 if ok else 400)
+            return
+
+        self.send_response(404); self.end_headers()
+        self.wfile.write(b"Not found")
+
     def serve_dashboard(self):
         html = DASHBOARD_HTML
         self.send_response(200)
@@ -352,9 +482,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(html.encode())
         self.log("Served dashboard", "→")
 
-    def serve_json(self, data):
+    def serve_json(self, data, status=200):
         body = json.dumps(data).encode()
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", len(body))
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -480,6 +610,26 @@ body {
 .url-item:hover { background: rgba(124,58,237,0.12); }
 .url-item code { color: #a78bfa; }
 .url-item .hint { float: right; font-size: 9px; color: #4a3a6a; margin-top: 1px; }
+/* ── Scene set switcher ── */
+.scene-active { font-size: 20px; font-weight: 800; color: #c4b5fd; margin: 2px 0 2px; }
+.scene-active.unknown { color: #f59e0b; }
+.scene-sub { font-size: 11px; color: #6d5a8a; margin-bottom: 14px; }
+.scene-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.scene-btn {
+  flex: 1; min-width: 96px; padding: 10px 14px; border-radius: 10px;
+  font-family: inherit; font-size: 13px; font-weight: 700; cursor: pointer;
+  color: #8b7aa8; background: rgba(0,0,0,0.25);
+  border: 1px solid rgba(124,58,237,0.2); transition: all 0.18s;
+}
+.scene-btn:hover:not(:disabled) { background: rgba(124,58,237,0.15); color: #c4b5fd; }
+.scene-btn.current {
+  background: linear-gradient(135deg, rgba(124,58,237,0.35), rgba(168,85,247,0.2));
+  color: #fff; border-color: rgba(168,85,247,0.5);
+}
+.scene-btn:disabled { opacity: 0.5; cursor: default; }
+.scene-msg { font-size: 11px; margin-top: 10px; min-height: 14px; color: #6d5a8a; }
+.scene-msg.ok { color: #22c55e; }
+.scene-msg.err { color: #f87171; }
 </style>
 </head>
 <body>
@@ -537,12 +687,21 @@ body {
   </div>
 
   <div class="card" style="flex:none">
+    <h3>Scene Set</h3>
+    <div class="scene-active unknown" id="scene-active">Detecting…</div>
+    <div class="scene-sub">Active theme served at <code>/overlays/active/</code></div>
+    <div class="scene-btns" id="scene-btns"></div>
+    <div class="scene-msg" id="scene-msg"></div>
+  </div>
+
+  <div class="card" style="flex:none">
     <h3>Overlay URLs</h3>
+    <div class="scene-sub">Point OBS at these — they stay the same across theme switches.</div>
     <div class="url-list">
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/starting-soon.html</code><span class="hint">Copy</span></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/be-right-back.html</code><span class="hint">Copy</span></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/stream-ending.html</code><span class="hint">Copy</span></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/tech-difficulties.html</code><span class="hint">Copy</span></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/active/starting-soon.html</code><span class="hint">Copy</span></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/active/be-right-back.html</code><span class="hint">Copy</span></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/active/stream-ending.html</code><span class="hint">Copy</span></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/active/tech-difficulties.html</code><span class="hint">Copy</span></div>
     </div>
   </div>
 
@@ -582,6 +741,65 @@ function twCard(el) {
   const live = document.getElementById('twitch-label')?.textContent === 'LIVE';
   el.classList.toggle('card-live', live);
 }
+
+const SCENE_LABELS = { modern: 'Modern Neon', retro: 'Retro Win98' };
+let sceneSwitching = false;
+
+function renderScenes(data) {
+  const active = data.active_set;
+  const available = data.available || [];
+  const activeEl = document.getElementById('scene-active');
+  if (active) {
+    activeEl.textContent = SCENE_LABELS[active] || active;
+    activeEl.classList.remove('unknown');
+  } else {
+    activeEl.textContent = 'Unknown / not set';
+    activeEl.classList.add('unknown');
+  }
+  const btnWrap = document.getElementById('scene-btns');
+  const order = ['modern', 'retro'];
+  const sets = order.filter(n => available.includes(n)).concat(available.filter(n => !order.includes(n)));
+  btnWrap.innerHTML = sets.map(name => {
+    const label = SCENE_LABELS[name] || name;
+    const cur = name === active ? ' current' : '';
+    const dis = (sceneSwitching || name === active) ? ' disabled' : '';
+    return '<button class="scene-btn' + cur + '" ' + dis + ' onclick="switchScene(\'' + name + '\')">'
+      + (name === active ? '● ' : '') + label + '</button>';
+  }).join('') || '<span class="scene-sub">No scene sets found on disk.</span>';
+}
+
+async function switchScene(name) {
+  if (sceneSwitching) return;
+  sceneSwitching = true;
+  const msg = document.getElementById('scene-msg');
+  msg.className = 'scene-msg'; msg.textContent = 'Switching to ' + (SCENE_LABELS[name] || name) + '…';
+  try {
+    const r = await fetch('/api/scenes/switch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ set: name })
+    });
+    const d = await r.json();
+    msg.textContent = d.message || (d.ok ? 'Switched.' : 'Switch failed.');
+    msg.classList.add(d.ok ? 'ok' : 'err');
+    renderScenes(d);
+    if (d.ok) msg.textContent += ' — refresh your OBS browser sources.';
+  } catch (e) {
+    msg.className = 'scene-msg err'; msg.textContent = 'Switch request failed.';
+  } finally {
+    sceneSwitching = false;
+    setTimeout(() => { if (!sceneSwitching) { msg.className = 'scene-msg'; msg.textContent = ''; } }, 6000);
+  }
+}
+
+async function pollScenes() {
+  if (sceneSwitching) return;  // don't clobber the UI mid-switch
+  try {
+    const r = await fetch('/api/scenes');
+    renderScenes(await r.json());
+  } catch (e) { /* leave last state */ }
+}
+setInterval(pollScenes, 4000);
+pollScenes();
 
 async function poll() {
   try {
@@ -727,12 +945,19 @@ if __name__ == "__main__":
     nav = [
         ("Dashboard", f"http://localhost:{PORT}/dashboard"),
         ("API",       f"http://localhost:{PORT}/api/status"),
+        ("Scenes",    f"http://localhost:{PORT}/api/scenes"),
         ("Health",    f"http://localhost:{PORT}/api/health"),
     ]
 
+    # Scene-set detection for the banner
+    scene_avail = available_sets()
+    scene_active = detect_active_set()
+    state["scenes"]["available"] = scene_avail
+    state["scenes"]["active_set"] = scene_active
+
     overlays = []
-    if os.path.isdir(OVERLAYS_DIR):
-        overlays = sorted(os.listdir(OVERLAYS_DIR))
+    if os.path.isdir(ACTIVE_DIR):
+        overlays = sorted(f for f in os.listdir(ACTIVE_DIR) if f.lower().endswith(".html"))
 
     print()
     print(box_top)
@@ -753,12 +978,25 @@ if __name__ == "__main__":
     gpu_name = state['system']['gpu'] or "—"
     print(info("System", f"{icon(True)} {style('D', sys_str)}  ·  {gpu_name}"))
     print(blank_row)
+    print(heading("Scene Set"))
+    _set_labels = {"modern": "Modern Neon", "retro": "Retro Win98"}
+    if scene_active:
+        _lbl = _set_labels.get(scene_active, scene_active)
+        print(info("Active", f"{icon(True)} {style('B', style('C', _lbl))}"))
+    else:
+        print(info("Active", f"{icon(False)} {style('Y', 'Unknown / not set')}"))
+    if scene_avail:
+        _av = ", ".join(_set_labels.get(n, n) + (style('G', ' ✓') if n == scene_active else "") for n in scene_avail)
+        print(info("Sets  ", style('D', _av)))
+    else:
+        print(info("Sets  ", style('Y', "none found — create overlays/modern/ and overlays/retro/")))
+    print(blank_row)
     print(heading("Overlays"))
     if overlays:
         for ov in overlays:
-            print(info(f" {style('D', '▸')}", style('D', f"/overlays/{ov}")))
+            print(info(f" {style('D', '▸')}", style('D', f"/overlays/{ACTIVE_DIRNAME}/{ov}")))
     else:
-        print(info("", style('Y', "No overlays found")))
+        print(info("", style('Y', "No overlays in active/ — switch a scene set from the dashboard")))
     print(blank_row)
     print(heading("Polling"))
     print(info(f" {style('D', '↻')}", f"{style('D', f'every {config["poll_interval"]}s')}"))
