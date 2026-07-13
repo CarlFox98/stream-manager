@@ -2,7 +2,7 @@
 """
 Stream Manager — web dashboard + overlay server + system monitor
 """
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 import argparse, json, os, socket, subprocess, sys, time, threading, urllib.parse, urllib.request, urllib.error, webbrowser
 from http.server import HTTPServer, BaseHTTPRequestHandler
