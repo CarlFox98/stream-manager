@@ -173,14 +173,14 @@ class Handler(BaseHTTPRequestHandler):
         pass  # suppress default logging
 
 
-def try_bind_port(start):
+def try_bind_port(start, host="127.0.0.1"):
     """Try to bind HTTP server on start..start+19. Returns (server, port) or raises."""
     for port in range(start, start + 20):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _s:
             try:
-                _s.bind(("0.0.0.0", port))
+                _s.bind((host, port))
             except OSError:
                 continue
-        s = HTTPServer(("0.0.0.0", port), Handler)
+        s = HTTPServer((host, port), Handler)
         return s, port
     raise RuntimeError(f"Could not bind to any port in range {start}-{start+19}")

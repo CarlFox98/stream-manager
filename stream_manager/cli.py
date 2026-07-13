@@ -16,6 +16,7 @@ def parse_args():
     p.add_argument("--port", type=int, default=0, help="Port to listen on (overrides config.json)")
     p.add_argument("--poll", type=int, default=0, help="Poll interval in seconds (overrides config.json)")
     p.add_argument("--no-browser", action="store_true", help="Don't open dashboard in browser")
+    p.add_argument("--lan", action="store_true", help="Bind to 0.0.0.0 so other devices on your network can reach the dashboard (overrides config.json)")
     p.add_argument("--check-update", action="store_true", help="Check GitHub for a newer version and exit")
     p.add_argument("--update", action="store_true", help="Check, then (after confirmation) download & install the latest version")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -61,8 +62,11 @@ def main():
         config["port"] = args.port
     if args.poll:
         config["poll_interval"] = args.poll
+    if args.lan:
+        config["lan"] = True
     setup_file_logging(config["log_file"])
-    server, PORT = try_bind_port(config["port"])
+    bind_host = "0.0.0.0" if config["lan"] else "127.0.0.1"
+    server, PORT = try_bind_port(config["port"], bind_host)
     state["server"]["port"] = PORT
     server.timeout = 0.5
 
@@ -116,6 +120,10 @@ def main():
     print(box_div)
     print(heading("Server"))
     print(info("●", f"http://localhost:{PORT}"))
+    if config["lan"]:
+        print(info("!", style('Y', "Bound to 0.0.0.0 — reachable by anyone on your network (--lan)")))
+    else:
+        print(info("i", style('D', "Bound to 127.0.0.1 — local only. Use --lan to expose on your network")))
     for name, url in nav:
         print(info(f" {style('D', '→')}", f"{style('W', name):12s}  {style('D', url)}"))
     print(blank_row)
@@ -154,7 +162,7 @@ def main():
     print(box_bot)
     print()
     print(separator)
-    flags = " --port / --poll / --no-browser / --check-update / --update"
+    flags = " --port / --poll / --no-browser / --lan / --check-update / --update"
     print(f"  {style('D', f'Ctrl+C to stop · config.json · flags:{flags}')}")
     print(separator)
     print()
