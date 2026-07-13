@@ -1,3 +1,5 @@
+let lastLogHead = null;
+
 function updateClock() {
   const now = new Date();
   document.getElementById('clock').textContent = now.toLocaleTimeString();
@@ -190,9 +192,10 @@ async function poll() {
     const gpuEl = document.getElementById('gpu-name');
     if (gpuEl && s.system.gpu) gpuEl.textContent = s.system.gpu;
 
-    // Log
-    const logBox = document.getElementById('log-box');
-    if (s.requests && s.requests.length) {
+    // Log — skip the rebuild entirely when nothing new has arrived
+    if (s.requests && s.requests.length && s.requests[0] !== lastLogHead) {
+      lastLogHead = s.requests[0];
+      const logBox = document.getElementById('log-box');
       logBox.innerHTML = s.requests.map(r => {
         const m = r.match(/^\[(\d+:\d+:\d+)\]\s+(.*)/);
         if (m) return '<div class="log-entry"><span class="log-timestamp">[' + m[1] + ']</span> <span class="log-text">' + m[2] + '</span></div>';
