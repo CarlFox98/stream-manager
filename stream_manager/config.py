@@ -12,6 +12,7 @@ CONFIG_DEFAULTS = {
     "twitch_user": "NeoTheFox98",
     "assets_dir": r"%USERPROFILE%\Pictures\OBS Assets",
     "log_file": "server.log",
+    "lan": False,
 }
 
 
@@ -24,7 +25,7 @@ def _load_config():
         except Exception as e:
             print(f"[config] Failed to load config.json: {e}")
 
-    for key, typ in [("poll_interval", (int, float)), ("port", int)]:
+    for key, typ in [("poll_interval", (int, float)), ("port", int), ("lan", bool)]:
         if not isinstance(config.get(key), typ):
             print(f"[config] {key} must be {typ}, got {type(config.get(key)).__name__}, using default {CONFIG_DEFAULTS[key]}")
             config[key] = CONFIG_DEFAULTS[key]

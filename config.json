@@ -3,5 +3,6 @@
   "poll_interval": 5,
   "twitch_user": "NeoTheFox98",
   "assets_dir": "%USERPROFILE%\\Pictures\\OBS Assets",
-  "log_file": "server.log"
+  "log_file": "server.log",
+  "lan": false
 }
