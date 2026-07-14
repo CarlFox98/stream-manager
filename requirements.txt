@@ -1,1 +1,2 @@
 psutil  # optional — enables CPU/RAM monitoring via Python instead of WMI
+websocket-client  # optional — enables real OBS scene/stream/record status via OBS WebSocket

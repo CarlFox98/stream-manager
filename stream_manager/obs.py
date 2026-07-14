@@ -1,8 +1,28 @@
-"""OBS process detection (is it running, and for how long)."""
+"""
+OBS status detection.
+
+Tries the OBS WebSocket API first, which reports real streaming/recording
+state and the current scene name. Falls back to tasklist/PowerShell process
+detection (running + PID + process uptime only) if the WebSocket isn't
+reachable or configured.
+"""
 import subprocess
+
+from .obs_ws import get_obs_ws_status
 
 
 def get_obs_status(state):
+    if get_obs_ws_status(state):
+        return
+    _get_obs_status_tasklist(state)
+
+
+def _get_obs_status_tasklist(state):
+    # tasklist can't see streaming/recording/scene state — don't leave stale
+    # values around from a WebSocket connection that has since dropped.
+    state["obs"]["streaming"] = False
+    state["obs"]["recording"] = False
+    state["obs"]["scene"] = ""
     try:
         out = subprocess.run(["tasklist", "/fi", "imagename eq obs64.exe"],
                              capture_output=True, text=True, timeout=5).stdout

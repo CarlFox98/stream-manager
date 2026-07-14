@@ -7,7 +7,8 @@ from .system import get_system_stats
 from .twitch import get_twitch_status, get_twitch_user_info
 
 state = {
-    "obs": {"running": False, "pid": None, "uptime": 0},
+    "obs": {"running": False, "pid": None, "uptime": 0,
+            "streaming": False, "recording": False, "scene": ""},
     "twitch": {"live": False, "title": "", "game": "", "viewers": 0, "started_at": "", "uptime": "", "connected": False,
                "display_name": "", "profile_image_url": "", "view_count": 0},
     "system": {"cpu": 0, "ram_pct": 0, "ram_used_gb": 0, "ram_total_gb": 0, "gpu": ""},
