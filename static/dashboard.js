@@ -138,8 +138,13 @@ async function poll() {
     const obsLabel = document.getElementById('obs-label');
     obsDot.className = 'status-dot ' + (s.obs.running ? 'on' : 'off');
     obsLabel.textContent = s.obs.running ? 'Running' : 'Not running';
-    document.getElementById('obs-pid').textContent = s.obs.running ? 'PID ' + s.obs.pid : '';
-    document.getElementById('obs-uptime').textContent = s.obs.running ? 'Uptime: ' + fmtUptime(s.obs.uptime) : '';
+    document.getElementById('obs-pid').textContent = s.obs.pid ? 'PID ' + s.obs.pid : '';
+    document.getElementById('obs-uptime').textContent = s.obs.uptime ? 'Uptime: ' + fmtUptime(s.obs.uptime) : '';
+    document.getElementById('obs-scene').textContent = s.obs.scene ? 'Scene: ' + s.obs.scene : '';
+    const outputs = [];
+    if (s.obs.streaming) outputs.push('● Streaming');
+    if (s.obs.recording) outputs.push('● Recording');
+    document.getElementById('obs-outputs').textContent = outputs.join('   ');
 
     // Twitch stream
     const twDot = document.getElementById('twitch-dot');
