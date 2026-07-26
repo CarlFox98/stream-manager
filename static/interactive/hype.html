@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PRISM — Hype</title>
+<!-- PRISM hype overlay for raids / bits / subs (driven by EventSub).
+     OBS Browser Source, 1920x1080, transparent, above your scene.
+     Poll source: GET /api/effects/hype?since=<id>.  Test: ?demo=raid|bits|sub -->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@700&display=swap');
+:root{ --ink:#EAF0FF; --ink-soft:#A9B4D6; --glass:rgba(14,16,28,0.46); --glass-deep:rgba(10,12,22,0.72);
+  --c1:#57F2E4; --c2:#6C8BFF; --c3:#B983FF; --c4:#FF7ACb; --c5:#FFD86B; --accent:#FF7ACb; }
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ width:100%; height:100%; overflow:hidden; background:transparent; font-family:'Space Grotesk',sans-serif; }
+.stage{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+.banner{ position:relative; padding:2px; border-radius:26px; overflow:hidden; min-width:640px;
+  background:linear-gradient(var(--glass),var(--glass)) padding-box,
+    linear-gradient(120deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5),var(--c1)) border-box;
+  background-size:100% 100%,320% 100%; border:1.8px solid transparent;
+  -webkit-backdrop-filter:blur(18px) saturate(160%); backdrop-filter:blur(18px) saturate(160%);
+  box-shadow:0 26px 64px rgba(0,0,0,0.55),0 0 44px color-mix(in srgb,var(--accent) 45%,transparent);
+  opacity:0; transform:translateY(-70px) scale(0.92); animation:flow 12s linear infinite;
+  transition:opacity .5s ease, transform .6s cubic-bezier(0.16,1,0.3,1); }
+.banner.show{ opacity:1; transform:translateY(0) scale(1); }
+.inner{ display:flex; flex-direction:column; align-items:center; gap:10px; padding:34px 60px; border-radius:24px; background:var(--glass-deep); text-align:center; }
+.kind{ font-size:20px; font-weight:700; letter-spacing:8px; text-transform:uppercase; color:var(--accent);
+  text-shadow:0 0 16px color-mix(in srgb,var(--accent) 60%,transparent); }
+.headline{ font-size:72px; font-weight:700; line-height:1.05;
+  background:linear-gradient(100deg,var(--c1),var(--c2) 25%,#fff 48%,var(--c3) 78%,var(--c4)); background-size:250% 100%;
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 30px rgba(140,170,255,0.4)); animation:shimmer 6s linear infinite; }
+.sub{ font-size:24px; color:var(--ink-soft); letter-spacing:1px; }
+.emoji{ font-size:52px; }
+@keyframes flow{ 0%{background-position:0% 50%} 100%{background-position:320% 50%} }
+@keyframes shimmer{ 0%{background-position:0% 0%} 100%{background-position:250% 0%} }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="banner" id="banner"><div class="inner">
+    <div class="emoji" id="emoji">🎉</div>
+    <div class="kind" id="kind">Raid</div>
+    <div class="headline" id="headline">Welcome!</div>
+    <div class="sub" id="sub"></div>
+  </div></div>
+</div>
+<script src="fx.js"></script>
+<script>
+(function(){
+  "use strict";
+  var CHANNEL="hype", POLL_MS=800, lastId=0, busy=false, queue=[], root=document.documentElement;
+  var banner=document.getElementById("banner"), emoji=document.getElementById("emoji"),
+      kind=document.getElementById("kind"), headline=document.getElementById("headline"), sub=document.getElementById("sub");
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  var THEME={
+    raid:{accent:"#B983FF",emoji:"🚀",kind:"Raid"},
+    bits:{accent:"#57F2E4",emoji:"💎",kind:"Bits"},
+    sub:{accent:"#FFD86B",emoji:"⭐",kind:"Sub"}
+  };
+  function tierName(t){ return ({"1000":"Tier 1","2000":"Tier 2","3000":"Tier 3","prime":"Prime"})[String(t)]||"Tier 1"; }
+  function play(d){
+    return new Promise(function(res){
+      var k=d.kind||"raid", th=THEME[k]||THEME.raid;
+      root.style.setProperty("--accent", th.accent);
+      emoji.textContent=th.emoji; kind.textContent=th.kind;
+      if(k==="raid"){ headline.textContent=esc(d.user)+" raided!"; sub.textContent="with "+(d.amount||0)+" viewers — welcome!"; }
+      else if(k==="bits"){ headline.textContent=esc(d.user); sub.textContent=(d.amount||0)+" bits — thank you!"; }
+      else { headline.textContent=esc(d.user); sub.textContent=tierName(d.amount)+" sub — thank you!"; }
+      banner.classList.add("show"); if(window.SMFX) SMFX.hype();
+      setTimeout(function(){ banner.classList.remove("show"); }, 6000);
+      setTimeout(res, 6600);
+    });
+  }
+  function pump(){ if(busy||!queue.length) return; busy=true; play(queue.shift()).then(function(){ busy=false; pump(); }); }
+  function poll(){
+    fetch("/api/effects/"+CHANNEL+"?since="+lastId,{cache:"no-store"})
+      .then(function(r){ return r.json(); })
+      .then(function(d){ lastId=(d.last_id!=null?d.last_id:lastId); (d.events||[]).forEach(function(ev){ queue.push(ev.data); }); pump(); })
+      .catch(function(){}).finally(function(){ setTimeout(poll, POLL_MS); });
+  }
+  var demo=new URLSearchParams(location.search).get("demo");
+  if(demo){ queue.push({kind:demo,user:"PixelWitch",amount:demo==="bits"?500:(demo==="sub"?"2000":42)}); }
+  poll();
+})();
+</script>
+</body>
+</html>

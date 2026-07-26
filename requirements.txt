@@ -1,2 +1,4 @@
 psutil  # optional — enables CPU/RAM monitoring via Python instead of WMI
-websocket-client  # optional — enables real OBS scene/stream/record status via OBS WebSocket
+websocket-client  # optional — real OBS status (OBS WebSocket) AND near-instant
+                  # channel-point redemptions + raid/bits/sub hype via Twitch EventSub.
+                  # Without it, redemptions still work via polling (a few seconds' latency).

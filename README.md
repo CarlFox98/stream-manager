@@ -8,6 +8,7 @@ A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system stat
 - **Real OBS status** via OBS's built-in WebSocket API (current scene, actual streaming/recording state), falling back automatically to basic process detection if it's not configured
 - **Twitch status** — live/offline, title, game, viewer count, via the Twitch Helix API
 - **Overlay scene sets** — switch your whole overlay theme (e.g. "Modern" vs "Retro") from the dashboard; OBS's Browser Sources point at stable URLs that never change, even when you switch themes
+- **Interactive games & redeems** — coin flip, 50/50, slots, dice, 8-ball, duel, and weighted **Lucky** / **Risky** wheels, driven by chat commands *and* Twitch channel-point redeems, with PRISM-styled OBS overlays (with sound) + chat replies. Includes a quote system, raid/bits/sub hype via EventSub, opt-in automated outcomes (VIP/shoutout/timeout/scene), a leaderboard, and per-command cooldowns. See **[INTERACTIVE.md](INTERACTIVE.md)**
 - **Self-update** — checks GitHub Releases and can download + install a new version from the dashboard, with an automatic backup first
 - **Local by default** — binds to `127.0.0.1` only; nothing on your network can reach it unless you explicitly opt in
 

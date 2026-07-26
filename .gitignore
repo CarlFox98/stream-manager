@@ -7,3 +7,7 @@ __pycache__/
 server.log
 .update-backup/
 *.bak
+
+# interactive layer — user OAuth token cache + local runtime data
+.twitch_user_token.json
+data/

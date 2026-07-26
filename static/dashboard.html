@@ -75,6 +75,34 @@
     <div class="scene-msg" id="scene-msg"></div>
   </div>
 
+  <div class="card" id="interactive-card" style="flex:none">
+    <h3>Interactive · Games &amp; Redeems</h3>
+    <div><span class="status-dot" id="ix-auth-dot"></span><span id="ix-auth-label">Checking…</span></div>
+    <div class="scene-sub" id="ix-auth-hint" style="margin:6px 0 0"></div>
+    <button class="update-btn" id="ix-auth-btn" style="display:none;margin-top:10px;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff" onclick="ixAuthorize()">Authorize Twitch</button>
+    <div class="ix-grid" style="margin-top:14px">
+      <button class="scene-btn" onclick="ixTest('coinflip')">🪙 Coin Flip</button>
+      <button class="scene-btn" onclick="ixTest('5050')">🎲 50 / 50</button>
+      <button class="scene-btn" onclick="ixTest('slots')">🎰 Slots</button>
+      <button class="scene-btn" onclick="ixTest('lucky')">🍀 Lucky Wheel</button>
+      <button class="scene-btn" onclick="ixTest('risky')">☠️ Risky Wheel</button>
+      <button class="scene-btn" onclick="ixReload()">♻️ Reload config</button>
+    </div>
+    <div class="scene-msg" id="ix-msg"></div>
+    <div class="ix-meta" id="ix-meta"></div>
+    <div class="scene-sub" style="margin-top:14px">Overlay browser sources — transparent, 1920×1080, above your scene:</div>
+    <div class="url-list">
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/static/interactive/wheel.html</code><span class="hint">Copy</span></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/static/interactive/coinflip.html</code><span class="hint">Copy</span></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/static/interactive/slots.html</code><span class="hint">Copy</span></div>
+      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/static/interactive/hype.html</code><span class="hint">Copy</span></div>
+    </div>
+    <div class="scene-sub" style="margin-top:14px">Leaderboard:</div>
+    <div class="ix-board" id="ix-board"><div class="stat-label">No plays yet.</div></div>
+    <div class="scene-sub" style="margin-top:14px">Recent results:</div>
+    <div class="ix-feed" id="ix-feed"><div class="stat-label">No spins yet.</div></div>
+  </div>
+
   <div class="card" style="flex:none">
     <h3>Overlay URLs</h3>
     <div class="scene-sub">Point OBS at these — they stay the same across theme switches.</div>

@@ -4,5 +4,79 @@
   "twitch_user": "NeoTheFox98",
   "assets_dir": "%USERPROFILE%\\Pictures\\OBS Assets",
   "log_file": "server.log",
-  "lan": false
+  "lan": false,
+
+  "interactive_enabled": true,
+  "command_prefix": "!",
+  "redeem_poll_interval": 3,
+
+  "wheels": {
+    "lucky": {
+      "title": "Lucky Wheel",
+      "color": "#57F2E4",
+      "no_repeat": true,
+      "segments": [
+        { "label": "Show your sona on the starting screen 🦊", "weight": 3 },
+        { "label": "VIP for a week", "weight": 1, "action": "vip" },
+        { "label": "Pick the next song 🎵", "weight": 3 },
+        { "label": "Choose the next game", "weight": 2 },
+        { "label": "Streamer does 10 push-ups", "weight": 2 },
+        { "label": "Add your emote suggestion to the list 😸", "weight": 2 },
+        { "label": "Shoutout + follow", "weight": 3, "action": "shoutout" },
+        { "label": "JACKPOT: all of the above 🎉", "weight": 1 }
+      ]
+    },
+    "risky": {
+      "title": "Risky Wheel",
+      "color": "#FF7ACb",
+      "no_repeat": true,
+      "severe_cooldown_seconds": 900,
+      "segments": [
+        { "label": "Read a bad pun on stream 😹", "weight": 3 },
+        { "label": "Play one round blindfolded", "weight": 2 },
+        { "label": "Swap to the cursed overlay theme", "weight": 2 },
+        { "label": "Talk in a silly voice for 5 min", "weight": 3 },
+        { "label": "Timeout for 60s ⏱️", "weight": 1, "severe": true, "action": "timeout:60" },
+        { "label": "Nothing happens... this time 😈", "weight": 3 },
+        { "label": "Let chat rename your sona (1 stream)", "weight": 1 },
+        { "label": "Next challenge on hard mode", "weight": 2 }
+      ]
+    }
+  },
+
+  "redeems": {
+    "auto_fulfill": true,
+    "lucky":    { "title": "Lucky Wheel Spin", "cost": 500, "enabled": true,  "prompt": "Spin the Lucky Wheel for a fun reward!", "global_cooldown": 60, "max_per_user_per_stream": 3, "max_per_stream": 0 },
+    "risky":    { "title": "Risky Wheel Spin", "cost": 500, "enabled": true,  "prompt": "Spin the Risky Wheel... if you dare.", "global_cooldown": 60, "max_per_user_per_stream": 3, "max_per_stream": 0 },
+    "coinflip": { "title": "Coin Flip",        "cost": 100, "enabled": false, "prompt": "Flip a coin - heads or tails?", "global_cooldown": 15, "max_per_user_per_stream": 0, "max_per_stream": 0 },
+    "5050":     { "title": "50/50",            "cost": 100, "enabled": false, "prompt": "Take a 50/50 gamble.", "global_cooldown": 15, "max_per_user_per_stream": 0, "max_per_stream": 0 }
+  },
+
+  "cooldowns": {
+    "mods_bypass": true,
+    "coinflip": { "user": 30, "global": 3 },
+    "5050":     { "user": 30, "global": 3 },
+    "slots":    { "user": 30, "global": 3 },
+    "dice":     { "user": 10, "global": 0 },
+    "duel":     { "user": 30, "global": 3 },
+    "lucky":    { "user": 60, "global": 5 },
+    "risky":    { "user": 60, "global": 5 },
+    "quote":    { "user": 10, "global": 0 }
+  },
+
+  "automation": {
+    "enabled": true,
+    "allow_scene": true,
+    "allow_vip": true,
+    "allow_shoutout": true,
+    "allow_timeout": true
+  },
+
+  "eventsub": {
+    "enabled": true,
+    "raid": true,
+    "cheer": true,
+    "subscribe": true,
+    "raid_free_spin": false
+  }
 }

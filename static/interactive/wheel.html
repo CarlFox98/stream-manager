@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PRISM — Wheel</title>
+<!-- ============================================================
+   PRISM — Lucky / Risky Wheel overlay
+   Matches the PRISM scene set (tokens inlined, self-contained).
+
+   One overlay drives BOTH wheels — the triggered effect carries
+   its own segments, title and colours, so Lucky and Risky share
+   this file. Add to OBS as a Browser Source, 1920x1080,
+   transparent, above your scene. Nothing shows until a spin is
+   triggered (channel-point redeem, chat command, or the
+   dashboard test button); then a holo card rises in, the wheel
+   spins to the winning slot, and the result shimmers in.
+
+   Poll source: GET /api/effects/wheel?since=<id>
+   Test layout with ?demo=lucky  or  ?demo=risky  on the URL.
+   ============================================================ -->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@600;700&display=swap');
+:root{
+  --ink:#EAF0FF; --ink-soft:#A9B4D6;
+  --glass:rgba(14,16,28,0.46); --glass-deep:rgba(10,12,22,0.72);
+  --c1:#57F2E4; --c2:#6C8BFF; --c3:#B983FF; --c4:#FF7ACb; --c5:#FFD86B;
+  --accent:#57F2E4;
+}
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ width:100%; height:100%; overflow:hidden; background:transparent;
+  font-family:'Space Grotesk','Segoe UI',Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+.stage{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+
+.card{ position:relative; padding:2px; border-radius:30px; overflow:hidden;
+  background:linear-gradient(var(--glass),var(--glass)) padding-box,
+    linear-gradient(120deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5),var(--c1)) border-box;
+  background-size:100% 100%,320% 100%; border:1.6px solid transparent;
+  -webkit-backdrop-filter:blur(18px) saturate(150%); backdrop-filter:blur(18px) saturate(150%);
+  box-shadow:0 26px 64px rgba(0,0,0,0.55), 0 0 34px rgba(120,140,255,0.16);
+  opacity:0; transform:translateY(60px) scale(0.94); pointer-events:none;
+  animation:flow 12s linear infinite;
+  transition:opacity 0.55s ease, transform 0.6s cubic-bezier(0.16,1,0.3,1); }
+.card.show{ opacity:1; transform:translateY(0) scale(1); }
+.card-inner{ display:flex; flex-direction:column; align-items:center; gap:18px;
+  padding:34px 46px 40px; border-radius:28px; background:var(--glass-deep); }
+
+.eyebrow{ display:inline-flex; align-items:center; gap:10px; font-size:14px; font-weight:700;
+  letter-spacing:6px; text-transform:uppercase; color:var(--accent);
+  text-shadow:0 0 14px color-mix(in srgb, var(--accent) 55%, transparent); }
+.eyebrow .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent);
+  box-shadow:0 0 8px var(--accent),0 0 16px var(--accent); animation:blip 1.4s ease-in-out infinite; }
+.title{ font-size:52px; font-weight:700; letter-spacing:2px; line-height:1.1;
+  background:linear-gradient(100deg,var(--c1),var(--c2) 22%,#ffffff 46%,#ffffff 56%,var(--c3) 80%,var(--c4));
+  background-size:250% 100%;
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 26px rgba(140,170,255,0.35)); animation:shimmer 7s linear infinite; }
+
+/* wheel */
+.wheel-wrap{ position:relative; width:520px; height:520px; }
+canvas{ position:absolute; inset:0; width:100%; height:100%;
+  filter:drop-shadow(0 0 34px rgba(120,150,255,0.28)); }
+.hub{ position:absolute; left:50%; top:50%; width:78px; height:78px; transform:translate(-50%,-50%);
+  border-radius:50%; z-index:3; display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(rgba(11,13,22,0.95),rgba(11,13,22,0.95)) padding-box,
+    linear-gradient(120deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5),var(--c1)) border-box;
+  background-size:100% 100%,320% 100%; border:2px solid transparent;
+  box-shadow:0 0 24px rgba(120,150,255,0.4), inset 0 0 14px rgba(120,150,255,0.35);
+  animation:flow 9s linear infinite; }
+.hub .glyph{ font-size:30px; filter:drop-shadow(0 0 10px rgba(150,180,255,0.7)); }
+/* pointer at top, pointing down into the wheel */
+.pointer{ position:absolute; left:50%; top:-6px; transform:translateX(-50%); z-index:4;
+  width:0; height:0; border-left:20px solid transparent; border-right:20px solid transparent;
+  border-top:34px solid var(--accent);
+  filter:drop-shadow(0 4px 10px rgba(0,0,0,0.6)) drop-shadow(0 0 12px color-mix(in srgb,var(--accent) 70%,transparent)); }
+
+/* winner reveal */
+.winner{ display:flex; flex-direction:column; align-items:center; gap:8px; min-height:64px;
+  opacity:0; transform:translateY(10px); transition:opacity .45s, transform .45s; }
+.winner.in{ opacity:1; transform:translateY(0); }
+.winner .label{ font-size:34px; font-weight:700; text-align:center; max-width:560px; line-height:1.15;
+  background:linear-gradient(100deg,var(--c1),#ffffff 46%,var(--c3),var(--c4)); background-size:250% 100%;
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 20px rgba(140,170,255,0.4)); animation:shimmer 7s linear infinite; }
+.winner .who{ display:inline-flex; align-items:center; gap:8px; padding:7px 20px; border-radius:999px;
+  font-size:17px; color:var(--ink);
+  background:linear-gradient(rgba(13,15,26,0.85),rgba(13,15,26,0.85)) padding-box,
+    linear-gradient(120deg,var(--c1),var(--c3),var(--c4)) border-box;
+  background-size:100% 100%,240% 100%; border:1.5px solid transparent; animation:flow 10s linear infinite; }
+.winner .who b{ color:#fff; font-weight:700; }
+
+@keyframes flow{ 0%{background-position:0% 50%} 100%{background-position:320% 50%} }
+@keyframes shimmer{ 0%{background-position:0% 0%} 100%{background-position:250% 0%} }
+@keyframes blip{ 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.8)} }
+@media (prefers-reduced-motion: reduce){ .card,.hub,.winner .label,.winner .who{ animation:none !important; } }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="card" id="card">
+    <div class="card-inner">
+      <div class="eyebrow"><span class="dot"></span><span id="eyebrow">Wheel of Fate</span></div>
+      <div class="title" id="title">Wheel</div>
+      <div class="wheel-wrap">
+        <div class="pointer" id="pointer"></div>
+        <canvas id="cv" width="1040" height="1040"></canvas>
+        <div class="hub"><span class="glyph" id="glyph">🎡</span></div>
+      </div>
+      <div class="winner" id="winner">
+        <div class="label" id="wlabel"></div>
+        <div class="who" id="who" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="fx.js"></script>
+<script>
+(function(){
+  "use strict";
+  var CHANNEL="wheel", POLL_MS=700;
+  var lastId=0, busy=false, queue=[];
+  var card=document.getElementById("card"), cv=document.getElementById("cv"), ctx=cv.getContext("2d"),
+      titleEl=document.getElementById("title"), eyebrow=document.getElementById("eyebrow"),
+      glyph=document.getElementById("glyph"), winner=document.getElementById("winner"),
+      wlabel=document.getElementById("wlabel"), who=document.getElementById("who"),
+      pointer=document.getElementById("pointer"), root=document.documentElement;
+  var TAU=Math.PI*2, R=cv.width/2;
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function easeOutCubic(t){ return 1-Math.pow(1-t,3); }
+
+  // fit a label to the wedge: shrink, then ellipsis
+  function fitLabel(label, maxW){
+    var size=34;
+    while(size>16){ ctx.font="600 "+size+"px 'Space Grotesk',sans-serif"; if(ctx.measureText(label).width<=maxW) return {text:label,size:size}; size-=2; }
+    ctx.font="600 16px 'Space Grotesk',sans-serif";
+    var t=label;
+    while(t.length>1 && ctx.measureText(t+"…").width>maxW) t=t.slice(0,-1);
+    return {text:(t===label?t:t+"…"), size:16};
+  }
+
+  function draw(segs, rot){
+    ctx.clearRect(0,0,cv.width,cv.height);
+    var n=segs.length, seg=TAU/n;
+    for(var i=0;i<n;i++){
+      var a0=rot+i*seg, a1=a0+seg;
+      ctx.beginPath(); ctx.moveTo(R,R); ctx.arc(R,R,R-8,a0,a1); ctx.closePath();
+      var col=segs[i].color||"#6C8BFF";
+      var g=ctx.createRadialGradient(R,R,40,R,R,R);
+      g.addColorStop(0, shade(col,0.28)); g.addColorStop(1, col);
+      ctx.fillStyle=g; ctx.fill();
+      ctx.lineWidth=3; ctx.strokeStyle="rgba(9,11,20,0.85)"; ctx.stroke();
+      // label
+      ctx.save();
+      ctx.translate(R,R); ctx.rotate(a0+seg/2);
+      ctx.textAlign="right"; ctx.textBaseline="middle"; ctx.fillStyle="#0b0e18";
+      var maxW=R-140, f=fitLabel(segs[i].label||"", maxW);
+      ctx.font="600 "+f.size+"px 'Space Grotesk',sans-serif";
+      ctx.shadowColor="rgba(255,255,255,0.35)"; ctx.shadowBlur=2;
+      ctx.fillText(f.text, R-46, 0);
+      ctx.restore();
+    }
+    // outer ring
+    ctx.beginPath(); ctx.arc(R,R,R-6,0,TAU); ctx.lineWidth=10;
+    ctx.strokeStyle="rgba(120,150,255,0.35)"; ctx.stroke();
+  }
+  function shade(hex,amt){ // lighten toward white by amt (0..1)
+    var m=/^#?([0-9a-f]{6})$/i.exec(hex); if(!m) return hex;
+    var num=parseInt(m[1],16), r=num>>16, g=(num>>8)&255, b=num&255;
+    r=Math.round(r+(255-r)*amt); g=Math.round(g+(255-g)*amt); b=Math.round(b+(255-b)*amt);
+    return "rgb("+r+","+g+","+b+")";
+  }
+
+  function spinTo(segs, winnerIndex){
+    return new Promise(function(res){
+      var n=segs.length, seg=TAU/n;
+      // pointer sits at top = angle -PI/2. Land winner centre there after 5 turns.
+      var target = (-Math.PI/2) - (winnerIndex+0.5)*seg + TAU*5;
+      var start=performance.now(), dur=4600, lastSeg=-1;
+      (function frame(now){
+        var t=Math.min((now-start)/dur,1), rot=easeOutCubic(t)*target;
+        draw(segs, rot);
+        // click as each segment passes the pointer (slows with the wheel)
+        var passed=Math.floor((rot)/seg);
+        if(passed!==lastSeg){ lastSeg=passed; if(window.SMFX) SMFX.spinTick(); }
+        if(t<1) requestAnimationFrame(frame); else res();
+      })(start);
+    });
+  }
+
+  function play(d){
+    return new Promise(function(res){
+      var segs=d.segments||[], win=(typeof d.winner_index==="number")?d.winner_index:0;
+      var accent=d.color||"#57F2E4";
+      root.style.setProperty("--accent", accent);
+      titleEl.textContent=d.title||"Wheel";
+      eyebrow.textContent = d.mode==="risky" ? "Risky Spin" : (d.mode==="lucky" ? "Lucky Spin" : "Wheel of Fate");
+      glyph.textContent = d.mode==="risky" ? "☠️" : "🍀";
+      winner.classList.remove("in"); wlabel.textContent=""; who.style.display="none";
+      draw(segs, 0);
+      card.classList.add("show");
+      setTimeout(function(){
+        spinTo(segs, win).then(function(){
+          wlabel.textContent = (d.winner || (segs[win]&&segs[win].label) || "");
+          if(d.user){ who.innerHTML="for <b>"+esc(d.user)+"</b>"; who.style.display="inline-flex"; }
+          if(window.SMFX){ d.mode==="risky" ? SMFX.hype() : SMFX.fanfare(); }
+          requestAnimationFrame(function(){ winner.classList.add("in"); });
+          setTimeout(function(){ card.classList.remove("show"); }, 4200);
+          setTimeout(res, 4900);
+        });
+      }, 500);
+    });
+  }
+  function pump(){ if(busy||!queue.length) return; busy=true; play(queue.shift()).then(function(){ busy=false; pump(); }); }
+
+  function poll(){
+    fetch("/api/effects/"+CHANNEL+"?since="+lastId,{cache:"no-store"})
+      .then(function(r){ return r.json(); })
+      .then(function(d){ lastId=(d.last_id!=null?d.last_id:lastId);
+        (d.events||[]).forEach(function(ev){ queue.push(ev.data); }); pump(); })
+      .catch(function(){})
+      .finally(function(){ setTimeout(poll, POLL_MS); });
+  }
+
+  var demo=new URLSearchParams(location.search).get("demo");
+  if(demo){
+    var pal=["#57F2E4","#6C8BFF","#B983FF","#FF7ACb","#FFD86B","#7DE8FF"];
+    var labels = demo==="risky"
+      ? ["Read a bad pun 😹","Blindfold round","Cursed overlay","Silly voice 5m","Timeout 60s ⏱️","Nothing… 😈"]
+      : ["Show your sona 🦊","VIP a week","Mod 5 min","Pick the song 🎵","Choose game","JACKPOT 🎉"];
+    var segs=labels.map(function(l,i){ return {label:l,color:pal[i%pal.length]}; });
+    queue.push({mode:demo, title:(demo==="risky"?"Risky Wheel":"Lucky Wheel"),
+      color:(demo==="risky"?"#FF7ACb":"#57F2E4"), segments:segs, winner_index:3, winner:labels[3], user:"PixelWitch"});
+  }
+  poll();
+})();
+</script>
+</body>
+</html>

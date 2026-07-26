@@ -3,7 +3,8 @@ import argparse, os, sys, threading, webbrowser
 
 from . import __version__
 from . import obs, system, twitch, updater
-from .config import config, TWITCH_USER
+from . import chat, redeems, twitch_auth, eventsub, cooldowns, games, stats
+from .config import config, TWITCH_USER, TWITCH_CLIENT_ID
 from .console import style, icon
 from .logging_util import setup_file_logging
 from .scenes import ACTIVE_DIR, ACTIVE_DIRNAME, available_sets, detect_active_set
@@ -159,6 +160,14 @@ def main():
     print(heading("Polling"))
     poll_str = f"every {config['poll_interval']}s"
     print(info(f" {style('D', '↻')}", style('D', poll_str)))
+    if config.get("interactive_enabled", True):
+        print(blank_row)
+        print(heading("Interactive"))
+        pfx = config.get("command_prefix", "!")
+        print(info("Chat  ", style('D', f"{pfx}coinflip · {pfx}5050 · {pfx}quote [n] · {pfx}addquote (mods)")))
+        print(info("Redeems", style('D', "Lucky Wheel Spin · Risky Wheel Spin (channel points)")))
+        print(info(f" {style('D', '▸')}", style('D', f"/static/interactive/wheel.html")))
+        print(info(f" {style('D', '▸')}", style('D', f"/static/interactive/coinflip.html")))
     print(box_bot)
     print()
     print(separator)
@@ -175,6 +184,18 @@ def main():
             print(f"  {style('Y', '●')} {style('Y', msg)}\n")
     threading.Thread(target=_bg_update_check, daemon=True).start()
 
+    # ── interactive layer: user-token auth, chat client, redemption poller ──
+    if config.get("interactive_enabled", True):
+        if not TWITCH_CLIENT_ID:
+            print(f"  {style('Y', '●')} Interactive features need TWITCH_CLIENT_ID in .env — skipping.\n")
+        else:
+            cooldowns.load()          # restore anti-spam windows from last run
+            games.load_spin_history()
+            twitch_auth.initialize(auto_login=True)  # loads cached token or starts device login
+            chat.start()
+            redeems.start()
+            eventsub.start()  # near-instant redemptions + raid/bits/sub hype (falls back to polling)
+
     if not args.no_browser:
         webbrowser.open(f"http://localhost:{PORT}/dashboard")
 
@@ -183,4 +204,9 @@ def main():
             server.handle_request()
     except KeyboardInterrupt:
         print(f"\n  {style('Y', 'Shutdown.')}")
+        # persist interactive state so cooldowns/anti-spam/stats survive a restart
+        try:
+            cooldowns.save(); games.save_spin_history(); stats.flush()
+        except Exception:
+            pass
         server.server_close()

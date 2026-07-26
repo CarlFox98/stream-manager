@@ -128,6 +128,115 @@ async function installUpdate() {
 checkUpdate();
 setInterval(checkUpdate, 3600000);
 
+// ── Interactive (games & redeems) ───────────────────────────────
+function ixWhen(ts) {
+  const d = Math.max(0, Math.floor(Date.now()/1000 - ts));
+  if (d < 60) return d + 's ago';
+  if (d < 3600) return Math.floor(d/60) + 'm ago';
+  return Math.floor(d/3600) + 'h ago';
+}
+async function ixTest(action) {
+  const msg = document.getElementById('ix-msg');
+  msg.className = 'scene-msg'; msg.textContent = 'Triggering ' + action + '…';
+  try {
+    const r = await fetch('/api/interactive/test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, user: 'Dashboard' })
+    });
+    const d = await r.json();
+    msg.classList.add(d.ok ? 'ok' : 'err');
+    msg.textContent = d.ok ? ('▶ ' + action + ' → ' + (d.result ?? 'sent') + ' (check your overlay)') : (d.error || 'Failed.');
+  } catch (e) { msg.className = 'scene-msg err'; msg.textContent = 'Request failed.'; }
+  setTimeout(() => { msg.className = 'scene-msg'; msg.textContent = ''; }, 6000);
+}
+async function ixAuthorize() {
+  const msg = document.getElementById('ix-msg');
+  msg.className = 'scene-msg'; msg.textContent = 'Starting Twitch login… watch the app window / this card for a code.';
+  try { await fetch('/api/interactive/authorize', { method: 'POST' }); } catch (e) {}
+}
+async function ixReload() {
+  const msg = document.getElementById('ix-msg');
+  msg.className = 'scene-msg'; msg.textContent = 'Reloading config.json…';
+  try {
+    const r = await fetch('/api/interactive/reload', { method: 'POST' });
+    const d = await r.json();
+    msg.classList.add(d.ok ? 'ok' : 'err');
+    msg.textContent = d.ok ? '♻️ Config reloaded (wheels, cooldowns, redeems).' : 'Reload failed.';
+  } catch (e) { msg.className = 'scene-msg err'; msg.textContent = 'Reload request failed.'; }
+  setTimeout(() => { msg.className = 'scene-msg'; msg.textContent = ''; }, 5000);
+}
+async function pollStats() {
+  try {
+    const r = await fetch('/api/interactive/stats');
+    const s = await r.json();
+    const board = document.getElementById('ix-board');
+    const players = s.top_players || [];
+    board.innerHTML = players.length
+      ? players.slice(0, 6).map((p, i) =>
+          '<div class="row"><span class="who">' + (i + 1) + '. ' + p.user + '</span>' +
+          '<span class="n">' + p.plays + ' plays' + (p.wins ? ' · ' + p.wins + ' wins' : '') + '</span></div>').join('')
+      : '<div class="stat-label">No plays yet.</div>';
+  } catch (e) { /* stats unavailable */ }
+}
+setInterval(pollStats, 5000);
+pollStats();
+async function pollInteractive() {
+  try {
+    const r = await fetch('/api/interactive');
+    const d = await r.json();
+    const dot = document.getElementById('ix-auth-dot');
+    const label = document.getElementById('ix-auth-label');
+    const hint = document.getElementById('ix-auth-hint');
+    const btn = document.getElementById('ix-auth-btn');
+    const st = d.auth?.status;
+    btn.style.display = 'none'; hint.innerHTML = '';
+    // transport / automation chips
+    const meta = document.getElementById('ix-meta');
+    if (meta) {
+      const chips = [];
+      const es = d.redeems?.transport === 'eventsub';
+      chips.push('<span class="ix-chip ' + (es ? 'on' : 'off') + '">' + (es ? 'EventSub ⚡' : 'Polling') + '</span>');
+      chips.push('<span class="ix-chip ' + (d.automation?.enabled ? 'on' : 'off') + '">Automation ' + (d.automation?.enabled ? 'on' : 'off') + '</span>');
+      if (d.eventsub && d.eventsub.available === false)
+        chips.push('<span class="ix-chip off">websocket-client not installed</span>');
+      meta.innerHTML = chips.join('');
+    }
+    if (st === 'ok') {
+      dot.className = 'status-dot on';
+      const chat = d.chat?.connected ? 'chat connected' : 'chat connecting…';
+      const rd = d.redeems?.ready ? 'redeems ready' : 'redeems setting up…';
+      label.textContent = 'Authorized as ' + (d.auth.login || '—');
+      hint.textContent = chat + ' · ' + rd + (d.chat?.channel ? ' · #' + d.chat.channel : '');
+    } else if (st === 'pending' || st === 'unauthorized') {
+      dot.className = 'status-dot warn';
+      label.textContent = 'Twitch authorization needed';
+      if (d.auth.user_code) {
+        hint.innerHTML = '1. Open <code>' + (d.auth.verification_uri || 'twitch.tv/activate') +
+          '</code> &nbsp; 2. Enter code <code>' + d.auth.user_code + '</code>';
+      } else {
+        hint.textContent = 'Click Authorize, then enter the code Twitch shows you.';
+      }
+      btn.style.display = 'inline-block';
+    } else if (st === 'unconfigured') {
+      dot.className = 'status-dot off';
+      label.textContent = 'Not configured';
+      hint.textContent = 'Add TWITCH_CLIENT_ID / SECRET to your .env, then restart.';
+    } else {
+      dot.className = 'status-dot off';
+      label.textContent = 'Unavailable';
+      hint.textContent = d.auth?.error || '';
+    }
+    const feed = document.getElementById('ix-feed');
+    const items = d.recent || [];
+    feed.innerHTML = items.length
+      ? items.map(it => '<div class="ix-item">' + (it.text || '') +
+          ' <span class="ix-when">· ' + ixWhen(it.ts) + '</span></div>').join('')
+      : '<div class="stat-label">No spins yet.</div>';
+  } catch (e) { /* interactive layer disabled or server busy */ }
+}
+setInterval(pollInteractive, 3000);
+pollInteractive();
+
 async function poll() {
   try {
     const r = await fetch('/api/status');

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PRISM — Slots</title>
+<!-- PRISM slot-machine overlay. OBS Browser Source, 1920x1080, transparent.
+     Poll source: GET /api/effects/slots?since=<id>.  Test: ?demo -->
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@700&display=swap');
+:root{ --ink:#EAF0FF; --ink-soft:#A9B4D6; --glass:rgba(14,16,28,0.46); --glass-deep:rgba(10,12,22,0.72);
+  --c1:#57F2E4; --c2:#6C8BFF; --c3:#B983FF; --c4:#FF7ACb; --c5:#FFD86B; }
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ width:100%; height:100%; overflow:hidden; background:transparent;
+  font-family:'Space Grotesk',sans-serif; }
+.stage{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+.card{ position:relative; padding:2px; border-radius:28px; overflow:hidden;
+  background:linear-gradient(var(--glass),var(--glass)) padding-box,
+    linear-gradient(120deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5),var(--c1)) border-box;
+  background-size:100% 100%,320% 100%; border:1.6px solid transparent;
+  -webkit-backdrop-filter:blur(18px) saturate(150%); backdrop-filter:blur(18px) saturate(150%);
+  box-shadow:0 26px 64px rgba(0,0,0,0.55),0 0 34px rgba(120,140,255,0.16);
+  opacity:0; transform:translateY(60px) scale(0.94); animation:flow 12s linear infinite;
+  transition:opacity .55s ease, transform .6s cubic-bezier(0.16,1,0.3,1); }
+.card.show{ opacity:1; transform:translateY(0) scale(1); }
+.card.win{ box-shadow:0 26px 70px rgba(0,0,0,0.55),0 0 60px rgba(255,216,107,0.5); }
+.inner{ display:flex; flex-direction:column; align-items:center; gap:20px; padding:36px 46px 40px; border-radius:26px; background:var(--glass-deep); }
+.eyebrow{ display:inline-flex; align-items:center; gap:10px; font-size:14px; font-weight:700; letter-spacing:6px;
+  text-transform:uppercase; color:var(--c5); text-shadow:0 0 14px rgba(255,216,107,0.5); }
+.eyebrow .dot{ width:9px; height:9px; border-radius:50%; background:var(--c5); box-shadow:0 0 8px var(--c5),0 0 16px var(--c5); animation:blip 1.4s ease-in-out infinite; }
+.reels{ display:flex; gap:16px; }
+.reel{ width:130px; height:150px; border-radius:18px; overflow:hidden; position:relative;
+  background:linear-gradient(rgba(9,11,20,0.9),rgba(9,11,20,0.9)) padding-box,
+    linear-gradient(120deg,var(--c1),var(--c3),var(--c4)) border-box; border:2px solid transparent;
+  box-shadow:inset 0 0 30px rgba(120,150,255,0.25); }
+.strip{ position:absolute; left:0; right:0; top:0; display:flex; flex-direction:column; align-items:center; }
+.sym{ height:150px; display:flex; align-items:center; justify-content:center; font-size:84px; line-height:1; }
+.reel::before,.reel::after{ content:""; position:absolute; left:0; right:0; height:36px; z-index:2; pointer-events:none; }
+.reel::before{ top:0; background:linear-gradient(rgba(9,11,20,0.95),transparent); }
+.reel::after{ bottom:0; background:linear-gradient(transparent,rgba(9,11,20,0.95)); }
+.result{ font-size:40px; font-weight:700; min-height:1.1em;
+  background:linear-gradient(100deg,var(--c1),#fff 46%,var(--c3),var(--c4)); background-size:250% 100%;
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 22px rgba(140,170,255,0.4)); animation:shimmer 7s linear infinite;
+  opacity:0; transition:opacity .4s; }
+.result.in{ opacity:1; }
+.who{ font-size:17px; color:var(--ink-soft); }
+@keyframes flow{ 0%{background-position:0% 50%} 100%{background-position:320% 50%} }
+@keyframes shimmer{ 0%{background-position:0% 0%} 100%{background-position:250% 0%} }
+@keyframes blip{ 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.8)} }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="card" id="card"><div class="inner">
+    <div class="eyebrow"><span class="dot"></span>Slot Machine</div>
+    <div class="reels"><div class="reel"><div class="strip" id="r0"></div></div>
+      <div class="reel"><div class="strip" id="r1"></div></div>
+      <div class="reel"><div class="strip" id="r2"></div></div></div>
+    <div class="result" id="result"></div>
+    <div class="who" id="who"></div>
+  </div></div>
+</div>
+<script src="fx.js"></script>
+<script>
+(function(){
+  "use strict";
+  var CHANNEL="slots", POLL_MS=700, SYM=["🍒","🍋","🔔","⭐","🦊","💎","7️⃣"];
+  var lastId=0, busy=false, queue=[];
+  var card=document.getElementById("card"), result=document.getElementById("result"), who=document.getElementById("who");
+  var strips=[document.getElementById("r0"),document.getElementById("r1"),document.getElementById("r2")];
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+
+  function fillStrip(el, finalSym){
+    var html=""; for(var i=0;i<24;i++){ html+='<div class="sym">'+SYM[Math.floor(Math.random()*SYM.length)]+'</div>'; }
+    html+='<div class="sym">'+finalSym+'</div>';
+    el.innerHTML=html; el.style.transition="none"; el.style.transform="translateY(0)";
+  }
+  function spinStrip(el, delay){
+    return new Promise(function(res){
+      var total=el.children.length, dist=(total-1)*150;
+      requestAnimationFrame(function(){
+        el.style.transition="transform "+(2.2+delay)+"s cubic-bezier(0.15,0.7,0.2,1)";
+        el.style.transform="translateY(-"+dist+"px)";
+        setTimeout(res,(2.2+delay)*1000);
+      });
+    });
+  }
+  function play(d){
+    return new Promise(function(res){
+      var reels=d.reels||[SYM[0],SYM[0],SYM[0]];
+      card.classList.remove("win"); result.classList.remove("in"); result.textContent=""; who.textContent="";
+      strips.forEach(function(el,i){ fillStrip(el, reels[i]); });
+      card.classList.add("show");
+      var tick=setInterval(function(){ if(window.SMFX) SMFX.spinTick(); },110);
+      Promise.all(strips.map(function(el,i){ return spinStrip(el, i*0.4); })).then(function(){
+        clearInterval(tick);
+        var win=d.win===true || (reels[0]===reels[1] && reels[1]===reels[2]);
+        result.textContent = win ? "JACKPOT! 🎉" : "";
+        if(win){ card.classList.add("win"); if(window.SMFX) SMFX.fanfare(); result.classList.add("in"); }
+        else if(window.SMFX) SMFX.lose();
+        if(d.user){ who.innerHTML="for <b>"+esc(d.user)+"</b>"; }
+        setTimeout(function(){ card.classList.remove("show"); }, win?3600:2400);
+        setTimeout(res, win?4200:3000);
+      });
+    });
+  }
+  function pump(){ if(busy||!queue.length) return; busy=true; play(queue.shift()).then(function(){ busy=false; pump(); }); }
+  function poll(){
+    fetch("/api/effects/"+CHANNEL+"?since="+lastId,{cache:"no-store"})
+      .then(function(r){ return r.json(); })
+      .then(function(d){ lastId=(d.last_id!=null?d.last_id:lastId); (d.events||[]).forEach(function(ev){ queue.push(ev.data); }); pump(); })
+      .catch(function(){}).finally(function(){ setTimeout(poll, POLL_MS); });
+  }
+  if(new URLSearchParams(location.search).has("demo")){ queue.push({reels:["7️⃣","7️⃣","7️⃣"],win:true,user:"PixelWitch"}); }
+  poll();
+})();
+</script>
+</body>
+</html>

@@ -1,15 +1,40 @@
 """HTTP request routing: dashboard, JSON API, and safe static/overlay file serving."""
-import json, os, socket
+import json, os, socket, urllib.parse
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 
 from . import scenes, updater
-from .config import BASE_DIR, OVERLAYS_DIR
+from . import actions, chat, effects, eventsub, games, quotes, redeems, stats, twitch_auth
+from .config import BASE_DIR, OVERLAYS_DIR, config
 from .console import style
 from .logging_util import write_file_log
 from .state import state
 
 STATIC_DIR = os.path.join(BASE_DIR, "static")
+
+
+def interactive_status():
+    """Snapshot of the interactive layer for the dashboard (no secrets)."""
+    port = state["server"]["port"]
+    base = f"http://localhost:{port}/static/interactive"
+    return {
+        "enabled": bool(config.get("interactive_enabled", True)),
+        "prefix": config.get("command_prefix", "!"),
+        "auth": twitch_auth.public_status(),
+        "chat": {"connected": chat.status["connected"], "channel": chat.status["channel"],
+                 "error": chat.status["error"], "sent": chat.status["sent"], "received": chat.status["received"]},
+        "redeems": redeems.public_status(),
+        "eventsub": eventsub.public_status(),
+        "automation": {"enabled": actions.enabled()},
+        "quotes": {"count": quotes.count()},
+        "recent": effects.history(limit=12),
+        "overlays": {
+            "coinflip": f"{base}/coinflip.html",
+            "wheel": f"{base}/wheel.html",
+            "slots": f"{base}/slots.html",
+            "hype": f"{base}/hype.html",
+        },
+    }
 
 MIME_MAP = {
     ".html": "text/html", ".css": "text/css", ".js": "application/javascript",
@@ -51,6 +76,26 @@ class Handler(BaseHTTPRequestHandler):
                 "notes": updater.update_state["notes"],
             }); return
 
+        # ── interactive layer (games / chat / redeems) ──
+        parsed = urllib.parse.urlparse(self.path)
+        if parsed.path.startswith("/api/effects/"):
+            channel = parsed.path[len("/api/effects/"):].strip("/")
+            qs = urllib.parse.parse_qs(parsed.query)
+            try:
+                since = int(qs.get("since", ["0"])[0])
+            except (ValueError, TypeError):
+                since = 0
+            self.serve_json(effects.since(channel, since)); return
+
+        if parsed.path == "/api/interactive":
+            self.serve_json(interactive_status()); return
+
+        if parsed.path == "/api/quotes":
+            self.serve_json({"count": quotes.count(), "quotes": quotes.all_quotes()}); return
+
+        if parsed.path == "/api/interactive/stats":
+            self.serve_json(stats.summary()); return
+
         # Serve overlay / asset files (path-traversal safe)
         if self.path.startswith("/overlays/"):
             if self._serve_safe(self.path[len("/overlays/"):], OVERLAYS_DIR):
@@ -64,7 +109,56 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(404); self.end_headers()
         self.wfile.write(b"Not found")
 
+    def _read_json(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length) if length else b"{}"
+            return json.loads(raw.decode("utf-8") or "{}")
+        except (ValueError, json.JSONDecodeError):
+            return None
+
     def do_POST(self):
+        # ── interactive layer ──
+        if self.path == "/api/interactive/test":
+            body = self._read_json()
+            if body is None:
+                self.serve_json({"ok": False, "error": "Invalid request body"}, status=400); return
+            action = body.get("action", "")
+            say = chat.say if chat.status.get("connected") else None
+            result = games.run_action(action, user=body.get("user", "Dashboard"), say=say)
+            self.log(f"Test {action} → {result}", "→" if result is not None else "✗")
+            self.serve_json({"ok": result is not None, "action": action, "result": result},
+                            status=200 if result is not None else 400)
+            return
+
+        if self.path == "/api/interactive/authorize":
+            twitch_auth.begin_authorization(blocking=False)
+            self.serve_json({"ok": True, "auth": twitch_auth.public_status()}); return
+
+        if self.path == "/api/interactive/reload":
+            from . import config as config_mod
+            hot = config_mod.reload()
+            # push any changed reward costs/limits back onto Twitch
+            try:
+                redeems.ensure_rewards()
+            except Exception as e:
+                self.log(f"Config reloaded, reward sync error: {e}", "!")
+            self.log("Interactive config reloaded", "✓")
+            self.serve_json({"ok": True, "reloaded": list(hot.keys())}); return
+
+        if self.path == "/api/quotes/add":
+            body = self._read_json() or {}
+            q = quotes.add(body.get("text", ""), added_by=body.get("added_by", "dashboard"))
+            self.serve_json({"ok": bool(q), "quote": q}, status=200 if q else 400); return
+
+        if self.path == "/api/quotes/delete":
+            body = self._read_json() or {}
+            try:
+                ok = quotes.delete(int(body.get("id", 0)))
+            except (ValueError, TypeError):
+                ok = False
+            self.serve_json({"ok": ok}, status=200 if ok else 400); return
+
         if self.path == "/api/scenes/switch":
             try:
                 length = int(self.headers.get("Content-Length", 0))
@@ -181,6 +275,7 @@ def try_bind_port(start, host="127.0.0.1"):
                 _s.bind((host, port))
             except OSError:
                 continue
-        s = HTTPServer((host, port), Handler)
+        s = ThreadingHTTPServer((host, port), Handler)
+        s.daemon_threads = True   # don't let in-flight requests block shutdown
         return s, port
     raise RuntimeError(f"Could not bind to any port in range {start}-{start+19}")
