@@ -1,5 +1,26 @@
 let lastLogHead = null;
 
+// This run's session token, baked into the page by the server. Sent on every
+// state-changing request so the server knows it's really the dashboard talking.
+const SM_TOKEN = document.querySelector('meta[name="sm-token"]')?.content || '';
+
+// Escape untrusted text before putting it inside innerHTML (prevents overlay
+// names, usernames, or log lines from injecting markup/script).
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+}
+
+// POST JSON with the session token attached.
+function smPost(url, body) {
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-SM-Token': SM_TOKEN },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
 function updateClock() {
   const now = new Date();
   document.getElementById('clock').textContent = now.toLocaleTimeString();
@@ -60,10 +81,7 @@ async function switchScene(name) {
   const msg = document.getElementById('scene-msg');
   msg.className = 'scene-msg'; msg.textContent = 'Switching to ' + (SCENE_LABELS[name] || name) + '…';
   try {
-    const r = await fetch('/api/scenes/switch', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ set: name })
-    });
+    const r = await smPost('/api/scenes/switch', { set: name });
     const d = await r.json();
     msg.textContent = d.message || (d.ok ? 'Switched.' : 'Switch failed.');
     msg.classList.add(d.ok ? 'ok' : 'err');
@@ -110,10 +128,7 @@ async function installUpdate() {
   const msg = document.getElementById('update-msg');
   btn.disabled = true; msg.className = 'update-msg'; msg.textContent = 'Downloading & installing…';
   try {
-    const r = await fetch('/api/update/install', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ confirm: true })
-    });
+    const r = await smPost('/api/update/install', { confirm: true });
     const d = await r.json();
     msg.textContent = d.message || d.error || (d.ok ? 'Installed.' : 'Failed.');
     msg.classList.add(d.ok ? 'ok' : 'err');
@@ -139,10 +154,7 @@ async function ixTest(action) {
   const msg = document.getElementById('ix-msg');
   msg.className = 'scene-msg'; msg.textContent = 'Triggering ' + action + '…';
   try {
-    const r = await fetch('/api/interactive/test', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, user: 'Dashboard' })
-    });
+    const r = await smPost('/api/interactive/test', { action, user: 'Dashboard' });
     const d = await r.json();
     msg.classList.add(d.ok ? 'ok' : 'err');
     msg.textContent = d.ok ? ('▶ ' + action + ' → ' + (d.result ?? 'sent') + ' (check your overlay)') : (d.error || 'Failed.');
@@ -151,14 +163,22 @@ async function ixTest(action) {
 }
 async function ixAuthorize() {
   const msg = document.getElementById('ix-msg');
-  msg.className = 'scene-msg'; msg.textContent = 'Starting Twitch login… watch the app window / this card for a code.';
-  try { await fetch('/api/interactive/authorize', { method: 'POST' }); } catch (e) {}
+  msg.className = 'scene-msg'; msg.textContent = 'Opening Twitch login in your browser…';
+  try { await smPost('/api/interactive/authorize'); } catch (e) {}
+  setTimeout(() => { if (msg.textContent.startsWith('Opening')) { msg.textContent = ''; } }, 6000);
+}
+async function ixLogout() {
+  const msg = document.getElementById('ix-msg');
+  msg.className = 'scene-msg'; msg.textContent = 'Signing out of Twitch…';
+  try { await smPost('/auth/logout'); } catch (e) {}
+  setTimeout(() => { msg.textContent = ''; }, 4000);
+  pollInteractive();
 }
 async function ixReload() {
   const msg = document.getElementById('ix-msg');
   msg.className = 'scene-msg'; msg.textContent = 'Reloading config.json…';
   try {
-    const r = await fetch('/api/interactive/reload', { method: 'POST' });
+    const r = await smPost('/api/interactive/reload');
     const d = await r.json();
     msg.classList.add(d.ok ? 'ok' : 'err');
     msg.textContent = d.ok ? '♻️ Config reloaded (wheels, cooldowns, redeems).' : 'Reload failed.';
@@ -173,8 +193,8 @@ async function pollStats() {
     const players = s.top_players || [];
     board.innerHTML = players.length
       ? players.slice(0, 6).map((p, i) =>
-          '<div class="row"><span class="who">' + (i + 1) + '. ' + p.user + '</span>' +
-          '<span class="n">' + p.plays + ' plays' + (p.wins ? ' · ' + p.wins + ' wins' : '') + '</span></div>').join('')
+          '<div class="row"><span class="who">' + (i + 1) + '. ' + esc(p.user) + '</span>' +
+          '<span class="n">' + esc(p.plays) + ' plays' + (p.wins ? ' · ' + esc(p.wins) + ' wins' : '') + '</span></div>').join('')
       : '<div class="stat-label">No plays yet.</div>';
   } catch (e) { /* stats unavailable */ }
 }
@@ -188,8 +208,9 @@ async function pollInteractive() {
     const label = document.getElementById('ix-auth-label');
     const hint = document.getElementById('ix-auth-hint');
     const btn = document.getElementById('ix-auth-btn');
+    const logoutBtn = document.getElementById('ix-logout-btn');
     const st = d.auth?.status;
-    btn.style.display = 'none'; hint.innerHTML = '';
+    btn.style.display = 'none'; if (logoutBtn) logoutBtn.style.display = 'none'; hint.innerHTML = '';
     // transport / automation chips
     const meta = document.getElementById('ix-meta');
     if (meta) {
@@ -207,20 +228,22 @@ async function pollInteractive() {
       const rd = d.redeems?.ready ? 'redeems ready' : 'redeems setting up…';
       label.textContent = 'Authorized as ' + (d.auth.login || '—');
       hint.textContent = chat + ' · ' + rd + (d.chat?.channel ? ' · #' + d.chat.channel : '');
-    } else if (st === 'pending' || st === 'unauthorized') {
+      if (logoutBtn) logoutBtn.style.display = 'inline-block';
+    } else if (st === 'pending') {
       dot.className = 'status-dot warn';
-      label.textContent = 'Twitch authorization needed';
-      if (d.auth.user_code) {
-        hint.innerHTML = '1. Open <code>' + (d.auth.verification_uri || 'twitch.tv/activate') +
-          '</code> &nbsp; 2. Enter code <code>' + d.auth.user_code + '</code>';
-      } else {
-        hint.textContent = 'Click Authorize, then enter the code Twitch shows you.';
-      }
+      label.textContent = 'Waiting for Twitch…';
+      hint.innerHTML = 'A browser window opened — click <strong>Authorize</strong> there.' +
+        (d.auth.authorize_url ? ' &nbsp;<a href="' + esc(d.auth.authorize_url) + '" target="_blank" rel="noopener">Reopen login</a>' : '');
+    } else if (st === 'unauthorized' || st === 'error') {
+      dot.className = 'status-dot warn';
+      label.textContent = 'Connect your Twitch account';
+      hint.textContent = d.auth?.error || 'One click — a browser window will open for you to approve access.';
+      btn.textContent = 'Login with Twitch';
       btn.style.display = 'inline-block';
     } else if (st === 'unconfigured') {
       dot.className = 'status-dot off';
       label.textContent = 'Not configured';
-      hint.textContent = 'Add TWITCH_CLIENT_ID / SECRET to your .env, then restart.';
+      hint.textContent = 'Add TWITCH_CLIENT_ID to your .env, then restart.';
     } else {
       dot.className = 'status-dot off';
       label.textContent = 'Unavailable';
@@ -229,8 +252,8 @@ async function pollInteractive() {
     const feed = document.getElementById('ix-feed');
     const items = d.recent || [];
     feed.innerHTML = items.length
-      ? items.map(it => '<div class="ix-item">' + (it.text || '') +
-          ' <span class="ix-when">· ' + ixWhen(it.ts) + '</span></div>').join('')
+      ? items.map(it => '<div class="ix-item">' + esc(it.text || '') +
+          ' <span class="ix-when">· ' + esc(ixWhen(it.ts)) + '</span></div>').join('')
       : '<div class="stat-label">No spins yet.</div>';
   } catch (e) { /* interactive layer disabled or server busy */ }
 }
@@ -312,8 +335,8 @@ async function poll() {
       const logBox = document.getElementById('log-box');
       logBox.innerHTML = s.requests.map(r => {
         const m = r.match(/^\[(\d+:\d+:\d+)\]\s+(.*)/);
-        if (m) return '<div class="log-entry"><span class="log-timestamp">[' + m[1] + ']</span> <span class="log-text">' + m[2] + '</span></div>';
-        return '<div class="log-entry"><span class="log-text">' + r + '</span></div>';
+        if (m) return '<div class="log-entry"><span class="log-timestamp">[' + esc(m[1]) + ']</span> <span class="log-text">' + esc(m[2]) + '</span></div>';
+        return '<div class="log-entry"><span class="log-text">' + esc(r) + '</span></div>';
       }).join('');
     }
   } catch(e) {

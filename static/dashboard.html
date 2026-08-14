@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="sm-token" content="__SM_TOKEN__">
 <title>Stream Manager</title>
 <link rel="stylesheet" href="/static/dashboard.css">
 </head>
@@ -79,7 +80,8 @@
     <h3>Interactive · Games &amp; Redeems</h3>
     <div><span class="status-dot" id="ix-auth-dot"></span><span id="ix-auth-label">Checking…</span></div>
     <div class="scene-sub" id="ix-auth-hint" style="margin:6px 0 0"></div>
-    <button class="update-btn" id="ix-auth-btn" style="display:none;margin-top:10px;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff" onclick="ixAuthorize()">Authorize Twitch</button>
+    <button class="update-btn" id="ix-auth-btn" style="display:none;margin-top:10px;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff" onclick="ixAuthorize()">Login with Twitch</button>
+    <button class="scene-btn" id="ix-logout-btn" style="display:none;margin-top:10px" onclick="ixLogout()">Sign out</button>
     <div class="ix-grid" style="margin-top:14px">
       <button class="scene-btn" onclick="ixTest('coinflip')">🪙 Coin Flip</button>
       <button class="scene-btn" onclick="ixTest('5050')">🎲 50 / 50</button>

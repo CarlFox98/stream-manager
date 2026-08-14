@@ -7,7 +7,7 @@ import random
 import pytest
 
 from stream_manager import (games, cooldowns, effects, quotes, redeems,
-                             actions, stats, eventsub, config as cfg)
+                             actions, stats, eventsub, twitch_auth, config as cfg)
 
 
 @pytest.fixture(autouse=True)
@@ -195,3 +195,76 @@ def test_stats_and_leaderboard():
     s = stats.summary()
     assert s["total_plays"] >= 2 and s["jackpots"] >= 1
     assert any(p["user"] == "alice" for p in s["top_players"])
+
+
+# ── one-click OAuth (authorization-code flow) ────────────────────────────────
+def test_authorize_url_and_redirect_port():
+    twitch_auth.set_server_port(5123)
+    assert twitch_auth.redirect_uri() == "http://localhost:5123/auth/callback"
+    url = twitch_auth.build_authorize_url("st-ate", challenge="chal")
+    assert url.startswith("https://id.twitch.tv/oauth2/authorize?")
+    assert "response_type=code" in url
+    assert "state=st-ate" in url
+    assert "code_challenge=chal" in url and "code_challenge_method=S256" in url
+    assert "redirect_uri=http%3A%2F%2Flocalhost%3A5123%2Fauth%2Fcallback" in url
+    # every requested scope appears
+    for scope in twitch_auth.SCOPES:
+        assert scope.replace(":", "%3A") in url
+
+
+def test_pkce_pair_is_valid_s256():
+    import base64, hashlib
+    verifier, challenge = twitch_auth._pkce_pair()
+    expected = base64.urlsafe_b64encode(
+        hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    assert challenge == expected and "=" not in challenge
+
+
+def test_callback_rejects_bad_state():
+    twitch_auth._pending["state"] = "good"
+    ok, msg = twitch_auth.handle_callback("code=abc&state=wrong")
+    assert not ok and "match" in msg.lower()
+
+
+def test_public_status_hides_tokens():
+    pub = twitch_auth.public_status()
+    assert "access_token" not in pub and "refresh_token" not in pub
+
+
+def test_token_request_falls_back_to_pkce(monkeypatch):
+    # Confidential attempt (with secret) fails, secret-free PKCE attempt succeeds.
+    monkeypatch.setattr(twitch_auth, "TWITCH_CLIENT_SECRET", "sekret")
+    seen = []
+    def fake(url, fields):
+        seen.append("client_secret" in fields)
+        if "client_secret" in fields:
+            return 403, {"message": "invalid client secret"}
+        return 200, {"access_token": "T", "refresh_token": "R", "expires_in": 3600}
+    monkeypatch.setattr(twitch_auth, "_http_form", fake)
+    code, body = twitch_auth._token_request({"grant_type": "authorization_code", "code": "c"})
+    assert code == 200 and body["access_token"] == "T"
+    assert seen == [True, False]   # tried with secret, then without
+
+
+# ── server hardening (path safety + CSRF token gating) ───────────────────────
+def test_safe_join_blocks_traversal(tmp_path):
+    from stream_manager import server
+    root = str(tmp_path / "overlays")
+    import os
+    os.makedirs(root)
+    open(os.path.join(root, "ok.html"), "w").close()
+    assert server._safe_join("ok.html", root) is not None
+    assert server._safe_join("../secret.txt", root) is None
+    assert server._safe_join("..%2f..%2fetc%2fpasswd", root) is None
+    # sibling-prefix must not be treated as inside
+    os.makedirs(str(tmp_path / "overlays-secret"))
+    open(str(tmp_path / "overlays-secret" / "x"), "w").close()
+    assert server._safe_join("../overlays-secret/x", root) is None
+
+
+def test_protected_posts_and_session_token():
+    from stream_manager import server
+    assert server.SESSION_TOKEN and len(server.SESSION_TOKEN) >= 20
+    for path in ("/api/update/install", "/api/scenes/switch", "/auth/logout",
+                 "/api/interactive/reload"):
+        assert path in server._PROTECTED_POSTS

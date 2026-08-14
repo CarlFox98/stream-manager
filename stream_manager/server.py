@@ -1,7 +1,7 @@
 """HTTP request routing: dashboard, JSON API, and safe static/overlay file serving."""
-import json, os, socket, urllib.parse
+import json, os, secrets, socket, urllib.parse
 from datetime import datetime
-from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import scenes, updater
 from . import actions, chat, effects, eventsub, games, quotes, redeems, stats, twitch_auth
@@ -10,7 +10,36 @@ from .console import style
 from .logging_util import write_file_log
 from .state import state
 
-STATIC_DIR = os.path.join(BASE_DIR, "static")
+STATIC_DIR = os.path.realpath(os.path.join(BASE_DIR, "static"))
+_OVERLAYS_ROOT = os.path.realpath(OVERLAYS_DIR)
+
+# Per-run secret. The dashboard is served with this token baked into a <meta>
+# tag; its JavaScript echoes it back in an X-SM-Token header on every state-
+# changing request. A cross-site page (CSRF) or another device on the LAN can't
+# read the token, so it can't drive these endpoints — only the real dashboard,
+# loaded same-origin, can. Regenerated every start.
+SESSION_TOKEN = secrets.token_urlsafe(32)
+
+# Endpoints that change state and therefore require the session token.
+_PROTECTED_POSTS = {
+    "/api/interactive/test", "/api/interactive/authorize", "/api/interactive/reload",
+    "/api/quotes/add", "/api/quotes/delete", "/api/scenes/switch",
+    "/api/update/install", "/auth/logout",
+}
+
+
+def _safe_join(rel, root):
+    """Resolve `rel` under `root`, returning the path only if it stays inside.
+
+    URL-decodes first, then resolves symlinks/`..` and confirms the result is
+    genuinely within `root` (guards against both traversal and the classic
+    sibling-prefix bug, e.g. '/overlays' matching '/overlays-secret').
+    """
+    root = os.path.realpath(root)
+    target = os.path.realpath(os.path.join(root, urllib.parse.unquote(rel)))
+    if target == root or target.startswith(root + os.sep):
+        return target
+    return None
 
 
 def interactive_status():
@@ -51,6 +80,10 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/dashboard":
             self.serve_dashboard(); return
+
+        # OAuth redirect back from Twitch (one-click login)
+        if self.path.startswith(twitch_auth.CALLBACK_PATH):
+            self.serve_auth_callback(); return
 
         if self.path == "/api/status":
             self.serve_json(state); return
@@ -98,12 +131,14 @@ class Handler(BaseHTTPRequestHandler):
 
         # Serve overlay / asset files (path-traversal safe)
         if self.path.startswith("/overlays/"):
-            if self._serve_safe(self.path[len("/overlays/"):], OVERLAYS_DIR):
+            rel = urllib.parse.urlparse(self.path).path[len("/overlays/"):]
+            if self._serve_safe(rel, _OVERLAYS_ROOT):
                 return
 
         # Serve the dashboard's own CSS/JS (path-traversal safe)
         if self.path.startswith("/static/"):
-            if self._serve_safe(self.path[len("/static/"):], STATIC_DIR):
+            rel = urllib.parse.urlparse(self.path).path[len("/static/"):]
+            if self._serve_safe(rel, STATIC_DIR):
                 return
 
         self.send_response(404); self.end_headers()
@@ -117,7 +152,24 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, json.JSONDecodeError):
             return None
 
+    def _authorized(self):
+        """True if the request carries this run's session token."""
+        tok = self.headers.get("X-SM-Token", "")
+        return bool(tok) and secrets.compare_digest(tok, SESSION_TOKEN)
+
     def do_POST(self):
+        # State-changing endpoints require the dashboard's session token. This
+        # blocks CSRF from other sites and requests from other LAN devices.
+        if self.path in _PROTECTED_POSTS and not self._authorized():
+            self.serve_json({"ok": False, "error": "Not authorized (open the dashboard on this machine)"},
+                            status=403)
+            return
+
+        if self.path == "/auth/logout":
+            twitch_auth.logout()
+            self.log("Logged out of Twitch", "!")
+            self.serve_json({"ok": True, "auth": twitch_auth.public_status()}); return
+
         # ── interactive layer ──
         if self.path == "/api/interactive/test":
             body = self._read_json()
@@ -132,7 +184,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if self.path == "/api/interactive/authorize":
-            twitch_auth.begin_authorization(blocking=False)
+            twitch_auth.begin_authorization(open_browser=True)
             self.serve_json({"ok": True, "auth": twitch_auth.public_status()}); return
 
         if self.path == "/api/interactive/reload":
@@ -214,6 +266,8 @@ class Handler(BaseHTTPRequestHandler):
         path = os.path.join(STATIC_DIR, "dashboard.html")
         with open(path, encoding="utf-8") as f:
             html = f.read()
+        # Bake this run's session token into the page so its JS can echo it back.
+        html = html.replace("__SM_TOKEN__", SESSION_TOKEN)
         body = html.encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -222,12 +276,37 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
         self.log("Served dashboard", "→")
 
+    def serve_auth_callback(self):
+        """Finish the Twitch one-click login and show a friendly close page."""
+        query = urllib.parse.urlparse(self.path).query
+        ok, msg = twitch_auth.handle_callback(query)
+        self.log(f"Twitch login: {msg}", "✓" if ok else "✗")
+        title = "You're all set! ✓" if ok else "Login didn't complete"
+        detail = ("Stream Manager is now connected to Twitch. You can close this tab."
+                  if ok else f"{msg}. You can close this tab and try again from the dashboard.")
+        accent = "#57F2E4" if ok else "#FF7ACB"
+        page = f"""<!doctype html><html><head><meta charset="utf-8"><title>Stream Manager</title>
+<style>body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+background:#0e0b16;color:#eaf0ff;font-family:system-ui,Segoe UI,sans-serif}}
+.box{{text-align:center;padding:40px 48px;border:1px solid rgba(124,58,237,.3);border-radius:16px;
+background:rgba(30,20,50,.5)}}h1{{color:{accent};margin:0 0 10px;font-size:22px}}
+p{{color:#b7a8d6;margin:0}}</style></head>
+<body><div class="box"><h1>{title}</h1><p>{detail}</p></div>
+<script>setTimeout(function(){{window.close();}},2500);</script></body></html>"""
+        body = page.encode()
+        self.send_response(200 if ok else 400)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", len(body))
+        self.end_headers()
+        self.wfile.write(body)
+
     def serve_json(self, data, status=200):
         body = json.dumps(data).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", len(body))
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # No wildcard CORS: the dashboard is same-origin, and dropping it stops
+        # other websites from reading these responses.
         self.end_headers()
         self.wfile.write(body)
 
@@ -242,8 +321,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_safe(self, rel, root_dir):
         """Serve rel from root_dir if it resolves inside it. Returns True if served."""
-        filepath = os.path.normpath(os.path.realpath(os.path.join(root_dir, rel)))
-        if os.path.isfile(filepath) and filepath.startswith(root_dir):
+        filepath = _safe_join(rel, root_dir)
+        if filepath and os.path.isfile(filepath):
             ext = os.path.splitext(filepath)[1].lower()
             mime = MIME_MAP.get(ext, "application/octet-stream")
             self.serve_file(filepath, mime)

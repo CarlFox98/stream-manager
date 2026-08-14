@@ -33,7 +33,7 @@ A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system stat
    ```
 
 3. **Create your `.env` file** — copy `.env.example` to `.env` and fill in:
-   - `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` — from https://dev.twitch.tv/console/apps (register an application, OAuth redirect URL `http://localhost`)
+   - `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` — from https://dev.twitch.tv/console/apps (register an application). Set the **OAuth Redirect URL** to `http://localhost:5000/auth/callback` so the one-click login can redirect back. (No `.env` yet? Just run the app once — it creates one from `.env.example` for you to fill in.)
    - `OBS_WEBSOCKET_PASSWORD` (optional) — in OBS: **Tools → WebSocket Server Settings → Enable WebSocket Server → Show Connect Info**, copy the password shown
 
 4. **Check `config.json`** (see [Configuration](#configuration) below) — in particular `twitch_user` and `assets_dir`.
@@ -44,7 +44,7 @@ A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system stat
    ```
    python stream-manager.py
    ```
-   Your browser opens the dashboard automatically. Leave the terminal window running while you stream.
+   Your browser opens the dashboard automatically. If interactive features are on and you haven't logged in yet, a second tab opens on Twitch's consent screen — click **Authorize** once and you're connected (no codes to copy). Leave the terminal window running while you stream.
 
 7. **(First run only, if using scene sets)** On the dashboard, click a scene set (e.g. **Modern Neon**) once — this copies its files into `overlays/active/`, which is what OBS actually reads.
 

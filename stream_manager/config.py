@@ -38,7 +38,9 @@ def _load_config():
     config = dict(CONFIG_DEFAULTS)
     if os.path.isfile(CONFIG_FILE):
         try:
-            with open(CONFIG_FILE) as f:
+            # Always UTF-8: config.json contains emoji (wheel labels), which the
+            # Windows-default cp1252 codec can't decode.
+            with open(CONFIG_FILE, encoding="utf-8") as f:
                 config.update(json.load(f))
         except Exception as e:
             print(f"[config] Failed to load config.json: {e}")
@@ -86,8 +88,18 @@ TWITCH_USER = config["twitch_user"]
 
 # ── .env ──────────────────────────────────────────────────────────────
 _env_path = os.path.join(BASE_DIR, ".env")
+_env_example = os.path.join(BASE_DIR, ".env.example")
+# First-run convenience: seed a .env from the template so newcomers have a file
+# to edit instead of hunting for the example.
+if not os.path.isfile(_env_path) and os.path.isfile(_env_example):
+    try:
+        import shutil
+        shutil.copyfile(_env_example, _env_path)
+        print("[config] Created .env from .env.example — add your Twitch credentials, then restart.")
+    except Exception as e:
+        print(f"[config] Could not create .env automatically: {e}")
 if os.path.isfile(_env_path):
-    for _line in open(_env_path):
+    for _line in open(_env_path, encoding="utf-8"):
         _line = _line.strip()
         if _line and not _line.startswith("#") and "=" in _line:
             k, v = _line.split("=", 1)

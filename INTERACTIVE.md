@@ -31,6 +31,20 @@ to chat commands (flip their `enabled` flag in `config.json` → `redeems` to al
 expose them as channel-point redeems). Raid/bits/sub hype fires automatically when
 EventSub is connected.
 
+## New in v0.6.0
+
+- **One-click Twitch login** — a browser window opens straight to Twitch's
+  consent screen; click **Authorize** once and you're done. No more copying a
+  code or a link. Re-authorize or sign out any time from the dashboard.
+- **Locked-down controls** — every state-changing endpoint (scene switch,
+  update install, config reload, authorize, quotes) now requires the
+  dashboard's per-run token, so nothing else on your network (or a random
+  website you visit) can drive them. The server is back to **localhost-only**
+  by default.
+- **Hardened serving** — overlay/static file serving is stricter about staying
+  inside its folder, dashboard output is HTML-escaped (no injection via
+  usernames/overlay labels), and the JSON API no longer sends wildcard CORS.
+
 ## New in v0.5.0
 
 - **EventSub** — near-instant redemptions and **raid / bits / sub** hype (needs
@@ -46,25 +60,30 @@ EventSub is connected.
 
 ## One-time setup
 
-1. **Twitch app = Public client.** In <https://dev.twitch.tv/console/apps>, open
-   your existing app (the one whose `TWITCH_CLIENT_ID` is in `.env`) and set
-   **Client Type → Public**. This enables the Device Code login used below. No
-   new credentials are needed — the same app powers status polling *and* the
-   interactive layer.
-
-2. **Run it.** `python stream-manager.py`. On first launch with interactive
-   features enabled, the console (and the dashboard's *Interactive* card) shows:
+1. **Register the redirect URI.** In <https://dev.twitch.tv/console/apps>, open
+   your existing app (the one whose `TWITCH_CLIENT_ID` is in `.env`) and add this
+   **OAuth Redirect URL**:
 
    ```
-   ┏━ Twitch interactive login ━━━━━━━━━━━━━━━━━━━━
-   ┃  1. Open:  https://www.twitch.tv/activate
-   ┃  2. Enter code:  ABCD-EFGH
-   ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   http://localhost:5000/auth/callback
    ```
 
-   Authorize with **your broadcaster account**. The token is cached in
-   `.twitch_user_token.json` (gitignored) and auto-refreshes; you won't be asked
-   again unless you change the requested scopes or revoke access.
+   (If Stream Manager binds a different port because 5000 was busy, the console
+   banner and dashboard show the exact URL to register — it's also printed as
+   **Redirect** in the startup banner.) Either **Public** or **Confidential**
+   client type works: with a client secret in `.env` the app uses the standard
+   secret exchange; without one it uses PKCE automatically.
+
+2. **Run it and click Authorize.** `python stream-manager.py`. On first launch a
+   **browser window opens straight to Twitch's consent screen** — approve with
+   **your broadcaster account** and you're connected. Nothing to copy or paste.
+   If the window doesn't open (e.g. a headless box), the console prints the link
+   and the dashboard's *Interactive* card has a **Login with Twitch** button.
+
+   The token is cached in `.twitch_user_token.json` (gitignored) and
+   auto-refreshes; you won't be asked again unless you change the requested
+   scopes, sign out, or revoke access. Use **Sign out** on the dashboard to
+   re-authorize (e.g. to switch to a bot account).
 
    Scopes requested: `chat:read`, `chat:edit`, `channel:read:redemptions`,
    `channel:manage:redemptions`, `bits:read`, `channel:read:subscriptions`,
@@ -255,10 +274,12 @@ Twitch chat ──IRC/TLS──► chat.py ─┐
 Channel points ─Helix poll─► redeems.py ─┤──► games.py ──► effects.py ──poll──► overlays (wheel/coinflip .html)
 Dashboard test button ──────────┘            │
                                              └──► chat.say (chat reply)
-                        twitch_auth.py  (user token via Device Code Flow, cached + refreshed)
+                        twitch_auth.py  (user token via Authorization Code + local callback, cached + refreshed)
 ```
 
-- **twitch_auth.py** — user token via Device Code Flow; cache + refresh; resolves `broadcaster_id`.
+- **twitch_auth.py** — user token via the Authorization Code flow with a local
+  `/auth/callback` redirect (one-click browser login, PKCE or secret); cache +
+  refresh; resolves `broadcaster_id`.
 - **chat.py** — raw TLS IRC client (`irc.chat.twitch.tv:6697`), tags parsing, reconnect, `say()`.
 - **redeems.py** — ensures rewards exist, polls the UNFULFILLED queue, dispatches, fulfils.
 - **games.py** — coinflip / 50-50 / weighted wheels + the chat-command dispatcher.
@@ -267,8 +288,10 @@ Dashboard test button ──────────┘            │
 - **overlays** — `static/interactive/{wheel,coinflip}.html`, self-contained PRISM-styled.
 
 New HTTP endpoints: `GET /api/effects/<channel>`, `GET /api/interactive`,
-`GET /api/quotes`, `POST /api/interactive/test`, `POST /api/interactive/authorize`,
-`POST /api/quotes/add`, `POST /api/quotes/delete`.
+`GET /api/quotes`, `GET /auth/callback` (Twitch redirect), `POST /api/interactive/test`,
+`POST /api/interactive/authorize`, `POST /auth/logout`, `POST /api/quotes/add`,
+`POST /api/quotes/delete`. State-changing `POST`s require the `X-SM-Token`
+header the dashboard sends automatically.
 
 ### Why polling instead of EventSub
 Channel-point EventSub needs a websocket client; the Helix

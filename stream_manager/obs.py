@@ -38,12 +38,12 @@ def _get_obs_status_tasklist(state):
                 r = subprocess.run(["powershell", "-noprofile", "-command", script],
                                    capture_output=True, text=True, timeout=5)
                 state["obs"]["uptime"] = int(r.stdout.strip() or 0)
-            except:
+            except Exception:
                 state["obs"]["uptime"] = 0
         else:
             state["obs"]["running"] = False
             state["obs"]["pid"] = None
             state["obs"]["uptime"] = 0
-    except:
+    except Exception:
         state["obs"]["running"] = False
         state["obs"]["uptime"] = 0
