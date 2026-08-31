@@ -15,7 +15,7 @@ Helix endpoints used (all need channel:manage:redemptions / channel:read:redempt
   PATCH  /helix/channel_points/custom_rewards/redemptions   (set FULFILLED/CANCELED)
 """
 import json, os, threading, time, urllib.error, urllib.parse, urllib.request
-from datetime import datetime, timezone
+from datetime import datetime
 
 from . import games, twitch_auth
 from .config import BASE_DIR, TWITCH_CLIENT_ID, config

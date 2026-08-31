@@ -1,0 +1,7 @@
+# Lint config — focus on real bugs (pyflakes + syntax), not style noise.
+line-length = 120
+target-version = "py39"
+extend-exclude = [".update-backup", "dist", "build"]
+
+[lint]
+select = ["E9", "F"]

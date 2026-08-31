@@ -7,7 +7,7 @@ import random
 import pytest
 
 from stream_manager import (games, cooldowns, effects, quotes, redeems,
-                             actions, stats, eventsub, twitch_auth, config as cfg)
+                             actions, stats, eventsub, twitch_auth, commands, config as cfg)
 
 
 @pytest.fixture(autouse=True)
@@ -266,5 +266,132 @@ def test_protected_posts_and_session_token():
     from stream_manager import server
     assert server.SESSION_TOKEN and len(server.SESSION_TOKEN) >= 20
     for path in ("/api/update/install", "/api/scenes/switch", "/auth/logout",
-                 "/api/interactive/reload"):
+                 "/api/interactive/reload", "/api/commands/toggle",
+                 "/api/commands/custom", "/api/config/save"):
         assert path in server._PROTECTED_POSTS
+
+
+# ── command registry ─────────────────────────────────────────────────────────
+def test_command_registry(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, "CONFIG_FILE", str(tmp_path / "config.json"))
+    monkeypatch.setitem(cfg.config, "commands", {})
+    assert commands.canonical_for("flip") == "coinflip"      # alias resolves
+    assert commands.is_enabled("coinflip") is True
+    commands.set_enabled("coinflip", False)
+    assert commands.is_enabled("coinflip") is False
+    ok, _ = commands.upsert_custom("socials", "Follow {user}", "everyone", True)
+    assert ok and commands.get_custom("socials")["response"] == "Follow {user}"
+    assert commands.upsert_custom("coinflip", "x")[0] is False   # built-in name rejected
+    assert commands.render("hi {user} {1}", "neo", ["yo"]) == "hi neo yo"
+    assert commands.delete_custom("socials") is True
+
+
+def test_games_respects_disabled_and_custom(monkeypatch):
+    monkeypatch.setitem(cfg.config, "commands", {
+        "coinflip": {"enabled": False},
+        "custom": {"hi": {"response": "yo {user}", "permission": "everyone", "enabled": True}},
+    })
+    sent = []
+    # disabled built-in → no coinflip reply
+    games.handle_command("!coinflip", "u", say=sent.append)
+    assert not any("flipped" in s for s in sent)
+    # custom command fires
+    games.handle_command("!hi", "u", say=sent.append)
+    assert "yo u" in sent
+    # re-enabling restores the built-in
+    monkeypatch.setitem(cfg.config, "commands", {})
+    sent.clear()
+    games.handle_command("!coinflip", "u", say=sent.append)
+    assert any("flipped" in s for s in sent)
+
+
+def test_effects_longpoll_and_global(monkeypatch):
+    import threading, time
+    start = effects.current_id()
+    got = {}
+    th = threading.Thread(target=lambda: got.update(w=effects.wait_events("wheel", start, timeout=3)))
+    th.start(); time.sleep(0.1); eid = effects.emit("wheel", {"x": 1}, summary="spin"); th.join(2)
+    assert got["w"]["events"] and got["w"]["events"][-1]["id"] == eid
+    # global stream carries channel + summary
+    s2 = effects.current_id(); g = {}
+    th2 = threading.Thread(target=lambda: g.update(r=effects.wait_global(s2, timeout=3)))
+    th2.start(); time.sleep(0.1); effects.emit("hype", {"kind": "raid"}, summary="RAID"); th2.join(2)
+    assert g["r"]["events"][-1]["channel"] == "hype" and g["r"]["events"][-1]["summary"] == "RAID"
+    # timeout returns empty promptly
+    t0 = time.time(); r = effects.wait_events("none", effects.current_id(), timeout=0.3)
+    assert r["events"] == [] and time.time() - t0 < 1.5
+
+
+def test_validation_helpers():
+    from stream_manager import server
+    assert server.validate_section("command_prefix", "!")[0] is True
+    assert server.validate_section("command_prefix", "!! !")[0] is False
+    assert server.validate_section("cooldowns", {"coinflip": {"user": -1}})[0] is False
+    assert server.validate_section("wheels", {"lucky": {"segments": [{"weight": 1}]}})[0] is False
+    assert server.validate_section("wheels", {"lucky": {"segments": [{"label": "x"}]}})[0] is True
+    assert server.validate_timers({"list": [{"message": ""}]})[0] is False
+    assert server.validate_timers({"enabled": True, "list": [{"message": "hi", "interval": 15, "min_lines": 5}]})[0] is True
+
+
+def test_alerts_first_chat_and_follow(monkeypatch):
+    from stream_manager import alerts, effects
+    monkeypatch.setitem(cfg.config, "alerts", {"first_chat": True, "follow_alert": True,
+                                               "first_chat_message": "Hi {user}!"})
+    alerts._greeted.clear(); alerts._followed.clear()
+    said = []
+    alerts.first_chat("Neo", say=said.append)
+    alerts.first_chat("Neo", say=said.append)          # de-duped
+    alerts.follow("Husky", say=said.append)
+    assert said == ["Hi Neo!"]                          # follow has no message → overlay only
+    texts = [e["text"] for e in effects.history("hype")]
+    assert any("First chat: Neo" in t for t in texts) and any("New follower: Husky" in t for t in texts)
+    # disabled → silent
+    monkeypatch.setitem(cfg.config, "alerts", {"first_chat": False})
+    alerts._greeted.clear(); out = []
+    alerts.first_chat("X", say=out.append)
+    assert out == []
+
+
+def test_eventsub_follow_routing(monkeypatch):
+    from stream_manager import alerts
+    hits = []
+    monkeypatch.setattr(alerts, "follow", lambda user, say=None: hits.append(user))
+    monkeypatch.setattr("stream_manager.chat.say", lambda t: None, raising=False)
+    eventsub._on_notification({"subscription": {"type": "channel.follow"},
+                               "event": {"user_name": "NewFan"}})
+    assert hits == ["NewFan"]
+
+
+def test_song_command_and_spotify(monkeypatch):
+    from stream_manager import spotify, commands
+    assert commands.canonical_for("np") == "song" and commands.canonical_for("song") == "song"
+    assert spotify.configured() is False and spotify.public_status()["status"] == "unconfigured"
+    monkeypatch.setattr(spotify, "song_line", lambda: "🎵 Now playing: X — Y")
+    sent = []
+    games.handle_command("!song", "u", say=sent.append)
+    assert sent and "Now playing" in sent[0]
+
+
+def test_validate_alerts():
+    from stream_manager import server
+    assert server.validate_section("alerts", {"first_chat": True, "first_chat_message": "hi"})[0] is True
+    assert server.validate_section("alerts", {"first_chat": "yes"})[0] is False
+    assert server.validate_section("alerts", {"follow_message": 5})[0] is False
+
+
+def test_timers_public_list(monkeypatch):
+    from stream_manager import timers
+    monkeypatch.setitem(cfg.config, "timers", {"enabled": True, "list": [{"message": "hi", "interval": 10}]})
+    pl = timers.public_list()
+    assert pl["enabled"] is True and pl["list"][0]["message"] == "hi"
+
+
+def test_config_deep_merge_and_save(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, "CONFIG_FILE", str(tmp_path / "config.json"))
+    monkeypatch.setitem(cfg.config, "cooldowns", {"coinflip": {"user": 30, "global": 3}})
+    cfg.save_config({"cooldowns": {"coinflip": {"user": 99}}})
+    # nested merge keeps 'global', updates 'user'
+    assert cfg.config["cooldowns"]["coinflip"] == {"user": 99, "global": 3}
+    import json
+    on_disk = json.load(open(str(tmp_path / "config.json"), encoding="utf-8"))
+    assert on_disk["cooldowns"]["coinflip"]["user"] == 99

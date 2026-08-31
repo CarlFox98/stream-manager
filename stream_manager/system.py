@@ -20,7 +20,7 @@ def get_system_stats(state):
             cpu_str = out.stdout.strip()
             if cpu_str.isdigit():
                 state["system"]["cpu"] = int(cpu_str)
-        except: pass
+        except Exception: pass
         try:
             script = (
                 "$os = Get-CimInstance Win32_OperatingSystem; "
@@ -38,7 +38,7 @@ def get_system_stats(state):
                 state["system"]["ram_total_gb"] = float(parts[0])
                 state["system"]["ram_used_gb"] = float(parts[1])
                 state["system"]["ram_pct"] = float(parts[2])
-        except: pass
+        except Exception: pass
 
 
 def get_gpu_stats(state):
@@ -59,4 +59,4 @@ def get_gpu_stats(state):
             name = out.stdout.strip()
         if name:
             state["system"]["gpu"] = name
-    except: pass
+    except Exception: pass

@@ -4,13 +4,18 @@ A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system stat
 
 ## Features
 
-- **Dashboard** — live OBS, Twitch, and system (CPU/RAM/GPU) status, refreshed every few seconds, at `http://localhost:5000/dashboard`
-- **Real OBS status** via OBS's built-in WebSocket API (current scene, actual streaming/recording state), falling back automatically to basic process detection if it's not configured
+- **Control-center dashboard** — a tabbed UI (Overview · Interactive · Commands · Timers · Quotes · Config · Log) at `http://localhost:5000/dashboard`, with live OBS/Twitch/system status, a health strip, toasts, and a connection banner
+- **Command Manager** — toggle any built-in command on/off (hand one to another bot) and create custom `!name → response` commands, right from the dashboard
+- **Visual config editor** — edit cooldowns, redeems, wheels, automation, EventSub, and alerts live (saved to `config.json`, validated) — no hand-editing JSON
+- **Real OBS status** via OBS's built-in WebSocket API, falling back to cross-platform process detection (psutil) if it's not configured
 - **Twitch status** — live/offline, title, game, viewer count, via the Twitch Helix API
-- **Overlay scene sets** — switch your whole overlay theme (e.g. "Modern" vs "Retro") from the dashboard; OBS's Browser Sources point at stable URLs that never change, even when you switch themes
-- **Interactive games & redeems** — coin flip, 50/50, slots, dice, 8-ball, duel, and weighted **Lucky** / **Risky** wheels, driven by chat commands *and* Twitch channel-point redeems, with PRISM-styled OBS overlays (with sound) + chat replies. Includes a quote system, raid/bits/sub hype via EventSub, opt-in automated outcomes (VIP/shoutout/timeout/scene), a leaderboard, and per-command cooldowns. See **[INTERACTIVE.md](INTERACTIVE.md)**
-- **Self-update** — checks GitHub Releases and can download + install a new version from the dashboard, with an automatic backup first
-- **Local by default** — binds to `127.0.0.1` only; nothing on your network can reach it unless you explicitly opt in
+- **Overlay scene sets** — switch your whole overlay theme from the dashboard; OBS Browser Sources point at stable URLs
+- **Interactive games & redeems** — coin flip, 50/50, slots, dice, 8-ball, duel, and weighted **Lucky** / **Risky** wheels via chat commands *and* channel-point redeems, with PRISM overlays (with sound). Plus a **quote system**, **timed messages**, **first-chatter & new-follower alerts**, raid/bits/sub hype via EventSub, opt-in automated outcomes, a leaderboard, and cooldowns. See **[INTERACTIVE.md](INTERACTIVE.md)**
+- **Real-time** — overlays get effects instantly (long-poll) and the dashboard streams live events (SSE)
+- **Spotify now-playing** — one-click connect, a `!song` command, and a dashboard widget (optional)
+- **One-click Twitch login** — a browser window opens for you to approve; no codes to copy
+- **Self-update** — checks GitHub Releases and installs from the dashboard (HTTPS-only, integrity-logged, with a backup first)
+- **Local by default & LAN-safe** — binds to `127.0.0.1`; with `--lan`, controls stay token-locked and you can require a password for remote devices
 
 ## Requirements
 
@@ -49,6 +54,16 @@ A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system stat
 7. **(First run only, if using scene sets)** On the dashboard, click a scene set (e.g. **Modern Neon**) once — this copies its files into `overlays/active/`, which is what OBS actually reads.
 
 8. **Point OBS at your overlays** — add a Browser Source for each one, using the URLs shown (and click-to-copy) under **Overlay URLs** on the dashboard, e.g. `http://localhost:5000/overlays/active/starting-soon.html`. These stay the same even after switching scene sets.
+
+## Build a standalone `.exe` (optional)
+
+To run without a Python install, build a single executable with PyInstaller (on Windows):
+
+```
+build-exe.bat
+```
+
+This produces `dist\StreamManager.exe`. Put your `config.json` and `.env` next to the exe before running it; `data/` and logs are created alongside it, and `static/` is bundled inside. (The in-app self-updater is for source installs; rebuild the exe to update it.)
 
 ## Configuration
 

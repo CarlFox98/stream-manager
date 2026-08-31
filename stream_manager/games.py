@@ -356,6 +356,17 @@ def handle_command(message, user, is_mod=False, is_broadcaster=False, say=None,
     args = parts[1:]
     can_edit = is_mod or is_broadcaster
 
+    # Command registry: a built-in that's been disabled on the dashboard is
+    # skipped here (so another bot can own it); custom commands are handled
+    # below if no active built-in matches.
+    from . import commands
+    canon = commands.canonical_for(cmd)
+    if canon and not commands.is_enabled(canon):
+        c = commands.get_custom(cmd)
+        if c and c.get("enabled", True) and commands.permission_ok(c, can_edit):
+            say(commands.render(c["response"], user, args))
+        return True
+
     if cmd in ("coinflip", "flip", "coin"):
         if _gate("coinflip", user, can_edit, say):
             coinflip(user, say)
@@ -400,9 +411,23 @@ def handle_command(message, user, is_mod=False, is_broadcaster=False, say=None,
         return True
     if cmd in ("quotecount",):
         say(f"There are {quotes.count()} quotes."); return True
+    if cmd in ("song", "nowplaying", "np"):
+        try:
+            from . import spotify
+            line = spotify.song_line()
+        except Exception:
+            line = None
+        say(line or "No song is playing right now.")
+        return True
     if cmd in ("commands", "help"):
         say(f"Games: {prefix}coinflip · {prefix}5050 · {prefix}slots · {prefix}dice · "
-            f"{prefix}8ball <q> · {prefix}duel @user · {prefix}quote [n] · {prefix}addquote (mods)")
+            f"{prefix}8ball <q> · {prefix}duel @user · {prefix}quote [n] · {prefix}song · {prefix}addquote (mods)")
+        return True
+
+    # Custom commands (user-defined !name -> response)
+    c = commands.get_custom(cmd)
+    if c and c.get("enabled", True) and commands.permission_ok(c, can_edit):
+        say(commands.render(c["response"], user, args))
         return True
     return False
 

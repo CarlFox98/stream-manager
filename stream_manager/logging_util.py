@@ -15,7 +15,7 @@ def setup_file_logging(rel_path):
     if os.path.isfile(path) and os.path.getsize(path) > 1048576:
         try:
             os.rename(path, path + ".old")
-        except: pass
+        except Exception: pass
 
 
 def write_file_log(plain):
@@ -23,4 +23,4 @@ def write_file_log(plain):
         try:
             with open(_log_file_path, "a", encoding="utf-8") as _f:
                 _f.write(plain + "\n")
-        except: pass
+        except Exception: pass

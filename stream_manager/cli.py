@@ -3,8 +3,8 @@ import argparse, os, sys, threading, webbrowser
 
 from . import __version__
 from . import obs, system, twitch, updater
-from . import chat, redeems, twitch_auth, eventsub, cooldowns, games, stats
-from .config import config, TWITCH_USER, TWITCH_CLIENT_ID
+from . import chat, redeems, twitch_auth, eventsub, cooldowns, games, stats, timers, spotify
+from .config import config, TWITCH_USER, TWITCH_CLIENT_ID, DASHBOARD_PASSWORD
 from .console import style, icon, grad
 from .logging_util import setup_file_logging
 from .scenes import ACTIVE_DIR, ACTIVE_DIRNAME, available_sets, detect_active_set
@@ -70,8 +70,9 @@ def main():
     server, PORT = try_bind_port(config["port"], bind_host)
     state["server"]["port"] = PORT
     server.timeout = 0.5
-    # OAuth redirect must match the port we actually bound.
+    # OAuth redirects must match the port we actually bound.
     twitch_auth.set_server_port(PORT)
+    spotify.set_server_port(PORT)
 
     M = style("M", "┃")
     B = style("D", "─")
@@ -124,7 +125,10 @@ def main():
     print(heading("Server"))
     print(info("●", f"http://localhost:{PORT}"))
     if config["lan"]:
-        print(info("!", style('Y', "Bound to 0.0.0.0 — reachable by your network (--lan). Controls stay locked to the dashboard on this machine.")))
+        if DASHBOARD_PASSWORD:
+            print(info("!", style('Y', "Bound to 0.0.0.0 (--lan). Remote devices need the dashboard password; localhost is exempt.")))
+        else:
+            print(info("!", style('Y', "Bound to 0.0.0.0 (--lan) with NO password — anyone on your network can view it. Set SM_DASHBOARD_PASSWORD in .env to require one.")))
     else:
         print(info("i", style('D', "Bound to 127.0.0.1 — local only. Use --lan to expose on your network")))
     for name, url in nav:
@@ -170,8 +174,8 @@ def main():
         print(info("Redeems", style('D', "Lucky Wheel Spin · Risky Wheel Spin (channel points)")))
         print(info("Login ", style('D', "one-click — a browser window opens for you to approve")))
         print(info("Redirect", style('D', twitch_auth.redirect_uri())))
-        print(info(f" {style('D', '▸')}", style('D', f"/static/interactive/wheel.html")))
-        print(info(f" {style('D', '▸')}", style('D', f"/static/interactive/coinflip.html")))
+        print(info(f" {style('D', '▸')}", style('D', "/static/interactive/wheel.html")))
+        print(info(f" {style('D', '▸')}", style('D', "/static/interactive/coinflip.html")))
     print(box_bot)
     print()
     print(separator)
@@ -199,6 +203,8 @@ def main():
             chat.start()
             redeems.start()
             eventsub.start()  # near-instant redemptions + raid/bits/sub hype (falls back to polling)
+            timers.start()    # timed chat messages
+            spotify.initialize()  # load cached Spotify token (if the user connected before)
 
     if not args.no_browser:
         webbrowser.open(f"http://localhost:{PORT}/dashboard")

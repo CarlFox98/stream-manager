@@ -8,13 +8,23 @@ static/), updates are fetched as GitHub's auto-generated release source
 archive (the "zipball") rather than a single raw file, and only the app's own
 paths are replaced — config.json, .env, logs, and backups are left alone.
 """
-import ast, io, json, os, shutil, tempfile, urllib.error, urllib.request, zipfile
+import ast, hashlib, io, json, os, shutil, tempfile, urllib.error, urllib.parse, urllib.request, zipfile
 
 from . import __version__
 from .config import BASE_DIR
 
 GITHUB_OWNER = "CarlFox98"
 GITHUB_REPO = "stream-manager"
+
+# The update archive must come from GitHub over HTTPS — never install code
+# fetched from anywhere else, even if the release JSON is somehow tampered with.
+_ALLOWED_HOSTS = {"api.github.com", "codeload.github.com", "github.com",
+                  "objects.githubusercontent.com"}
+
+
+def _is_trusted_url(url):
+    p = urllib.parse.urlparse(url or "")
+    return p.scheme == "https" and p.hostname in _ALLOWED_HOSTS
 GITHUB_API_LATEST = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 
 # Paths (relative to BASE_DIR) that an update is allowed to replace.
@@ -22,7 +32,8 @@ SYNCED_PATHS = ["stream-manager.py", "stream_manager", "static", "requirements.t
 BACKUP_DIR = os.path.join(BASE_DIR, ".update-backup")
 
 update_state = {"checked": False, "latest": None, "current": __version__,
-                "available": False, "error": None, "notes": "", "download_url": None}
+                "available": False, "error": None, "notes": "", "download_url": None,
+                "download_sha256": None}
 
 
 def _parse_version(v):
@@ -113,10 +124,15 @@ def download_update():
     url = update_state.get("download_url")
     if not url:
         return False, "No download URL — run a version check first", None
+    if not _is_trusted_url(url):
+        return False, f"Refusing to download: untrusted URL host ({url})", None
     try:
         raw = _http_get(url, accept="application/vnd.github+json", timeout=30)
     except Exception as e:
         return False, f"Download failed: {e}", None
+    sha256 = hashlib.sha256(raw).hexdigest()
+    update_state["download_sha256"] = sha256
+    print(f"[update] downloaded {len(raw)} bytes, sha256={sha256}")
 
     stage_dir = tempfile.mkdtemp(prefix="stream-manager-update-")
     try:

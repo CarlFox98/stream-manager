@@ -10,9 +10,11 @@ a set means replacing the contents of active/ with the chosen set.
 """
 import hashlib, os, shutil
 
-from .config import OVERLAYS_DIR
+from .config import OVERLAYS_DIR, config
 
-SCENE_SETS = ["modern", "retro"]
+# Set names come from config.json ("scene_sets") so new overlay sets can be
+# added without editing code; falls back to the built-in pair.
+SCENE_SETS = config.get("scene_sets") or ["modern", "retro"]
 ACTIVE_DIRNAME = "active"
 ACTIVE_DIR = os.path.join(OVERLAYS_DIR, ACTIVE_DIRNAME)
 # Manifest records which set was last applied to active/ (source of truth).

@@ -93,6 +93,13 @@ def _handle_privmsg(tags, prefix, params, channel):
     user = tags.get("display-name") or nick
     text = params[-1] if params else ""
     status["received"] += 1
+    # First-time chatter of the stream → alert (Twitch tags the message).
+    if tags.get("first-msg") == "1":
+        try:
+            from . import alerts
+            alerts.first_chat(user, say=say)
+        except Exception as e:
+            print(f"[chat] first-chat alert error: {e}")
     prefix_char = config.get("command_prefix", "!") or "!"
     if not text.startswith(prefix_char):
         return
@@ -173,10 +180,9 @@ def _run_forever():
     while not _stop.is_set():
         status["connected"] = False
         try:
-            ok = _connect_and_run()
+            _connect_and_run()
         except Exception as e:
             status["error"] = str(e)
-            ok = False
         finally:
             _close()
         if status["error"] == "authentication failed — re-authorize on the dashboard":

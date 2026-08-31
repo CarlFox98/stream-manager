@@ -28,6 +28,8 @@ from .config import BASE_DIR, TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_USE
 #   channel:manage:vips                → automated VIP outcome
 #   moderator:manage:banned_users      → automated timeout outcome (risky wheel)
 #   moderator:manage:shoutouts         → automated shoutout outcome
+#   moderator:read:followers           → read the follower list/total (PRISM's
+#                                        refresh-followers writes prism-followers.json)
 SCOPES = [
     "chat:read",
     "chat:edit",
@@ -38,6 +40,7 @@ SCOPES = [
     "channel:manage:vips",
     "moderator:manage:banned_users",
     "moderator:manage:shoutouts",
+    "moderator:read:followers",
 ]
 
 TOKEN_FILE = os.path.join(BASE_DIR, ".twitch_user_token.json")

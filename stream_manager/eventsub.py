@@ -47,6 +47,7 @@ def _opts():
         "raid": e.get("raid", True),
         "cheer": e.get("cheer", True),
         "subscribe": e.get("subscribe", True),
+        "follow": e.get("follow", True),
     }
 
 
@@ -64,6 +65,9 @@ def _subscribe(session_id):
         subs.append(("channel.cheer", "1", {"broadcaster_user_id": bid}))
     if o["subscribe"]:
         subs.append(("channel.subscribe", "1", {"broadcaster_user_id": bid}))
+    if o["follow"]:
+        # channel.follow v2 needs moderator_user_id + moderator:read:followers
+        subs.append(("channel.follow", "2", {"broadcaster_user_id": bid, "moderator_user_id": bid}))
 
     made = 0
     for typ, ver, cond in subs:
@@ -109,6 +113,9 @@ def _on_notification(payload):
     elif typ == "channel.subscribe":
         tier = str(event.get("tier", "1000"))
         _hype("sub", event.get("user_name") or "Someone", tier)
+    elif typ == "channel.follow":
+        from . import alerts, chat
+        alerts.follow(event.get("user_name") or event.get("user_login") or "Someone", say=chat.say)
 
 
 def _hype(kind, user, amount):

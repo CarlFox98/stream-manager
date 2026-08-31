@@ -5,124 +5,253 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="sm-token" content="__SM_TOKEN__">
 <title>Stream Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body>
-<div class="sidebar">
+<div class="conn-banner" id="conn-banner" role="status">Connection to Stream Manager lost — retrying…</div>
+<div class="toast-wrap" id="toast-wrap" aria-live="polite"></div>
+
+<aside class="sidebar">
   <div class="clock" id="clock">--:--:--</div>
   <div class="clock-date" id="clock-date">---</div>
-  <img class="avatar" id="avatar" src="" alt="" style="display:none">
+  <img class="avatar" id="avatar" src="" alt="Channel avatar" style="display:none">
   <h1>Stream Manager</h1>
   <div class="sub"><span id="display-name">NeoTheFox98</span> · <span id="view-count">0</span> views</div>
-  <div style="margin-top:auto;padding-top:16px;border-top:1px solid rgba(124,58,237,0.1)">
-    <div style="font-size:11px;color:#6d5a8a">Server</div>
-    <div style="font-size:12px;color:#8b7aa8;margin-top:2px">
-      ● <span id="server-status">Running</span> <span id="server-port">:5000</span>
-    </div>
-    <div style="font-size:11px;color:#6d5a8a;margin-top:4px" id="server-uptime-row">
-      Uptime: <span id="server-uptime">0s</span>
-    </div>
-    <div style="font-size:11px;color:#6d5a8a;margin-top:6px">Twitch API</div>
-    <div style="font-size:12px;margin-top:2px">
-      <span class="status-dot" id="twitch-api-dot"></span>
-      <span id="twitch-api-label">Checking...</span>
-    </div>
+  <div class="side-block">
+    <div class="side-label">Server</div>
+    <div class="side-val">● <span id="server-status">Running</span> <span class="mono" id="server-port">:5000</span></div>
+    <div class="side-val">Uptime <span class="mono" id="server-uptime">0s</span></div>
+    <div class="side-label">Twitch API</div>
+    <div class="side-val"><span class="status-dot" id="twitch-api-dot"></span><span id="twitch-api-label">Checking…</span></div>
   </div>
-</div>
-<div class="main">
-  <div class="row">
-    <div class="card">
-      <h3>OBS Studio</h3>
-      <div><span class="status-dot" id="obs-dot"></span><span id="obs-label">Checking...</span></div>
-      <div class="stat-value" style="font-size:18px" id="obs-pid"></div>
-      <div class="stat-label" id="obs-uptime">Waiting...</div>
-      <div class="stat-label" id="obs-scene"></div>
-      <div class="stat-label" id="obs-outputs"></div>
+</aside>
+
+<main class="main">
+  <header class="topbar">
+    <div class="brand">
+      <span class="word">Stream Manager</span>
+      <span class="tag">Control Center</span>
+      <span class="ver-chip">v0.7.0</span>
     </div>
-    <div class="card">
-      <h3>Twitch Stream</h3>
-      <div><span class="status-dot" id="twitch-dot"></span><span id="twitch-label">Checking...</span></div>
-      <div class="twitch-title" id="twitch-title">—</div>
-      <div class="twitch-game" id="twitch-game">—</div>
-      <div class="stat-value" id="twitch-viewers" style="font-size:22px"></div>
-      <div class="stat-label" id="twitch-uptime"></div>
-    </div>
-    <div class="card">
-      <h3>System</h3>
-      <div class="stat-value"><span id="cpu-pct">0</span><span class="unit">% CPU</span></div>
-      <div class="bar-bg"><div class="bar-fill" id="cpu-bar" style="width:0%"></div></div>
-      <div class="stat-value" style="font-size:18px;margin-top:8px">
-        <span id="ram-used">0</span><span class="unit"> / </span><span id="ram-total">0</span><span class="unit"> GB</span>
+    <div class="conn-pill" id="conn-pill"><span class="status-dot on"></span><span id="conn-text">Live</span></div>
+  </header>
+
+  <nav class="tabs" id="tabs" role="tablist">
+    <button class="tab active" data-tab="overview" role="tab">Overview</button>
+    <button class="tab" data-tab="interactive" role="tab">Interactive</button>
+    <button class="tab" data-tab="commands" role="tab">Commands</button>
+    <button class="tab" data-tab="timers" role="tab">Timers</button>
+    <button class="tab" data-tab="quotes" role="tab">Quotes</button>
+    <button class="tab" data-tab="config" role="tab">Config</button>
+    <button class="tab" data-tab="log" role="tab">Log</button>
+  </nav>
+
+  <!-- ── Overview ─────────────────────────────────────────────── -->
+  <section class="tab-panel active" id="tab-overview">
+    <div class="health" id="health"></div>
+    <div class="row">
+      <div class="card">
+        <h3>OBS Studio</h3>
+        <div class="status-line"><span class="status-dot" id="obs-dot"></span><span id="obs-label">Checking…</span></div>
+        <div class="stat-label" id="obs-pid"></div>
+        <div class="stat-label" id="obs-uptime">Waiting…</div>
+        <div class="stat-label" id="obs-scene"></div>
+        <div class="stat-label" id="obs-outputs"></div>
       </div>
-      <div class="bar-bg"><div class="bar-fill" id="ram-bar" style="width:0%"></div></div>
-      <div class="stat-label" id="ram-pct-label">0% used</div>
-      <div class="stat-label" style="margin-top:6px">GPU: <span id="gpu-name" style="color:#c4b5fd">—</span></div>
+      <div class="card" id="twitch-card">
+        <h3>Twitch Stream</h3>
+        <div class="status-line"><span class="status-dot" id="twitch-dot"></span><span id="twitch-label">Checking…</span></div>
+        <div class="twitch-title" id="twitch-title">—</div>
+        <div class="twitch-game" id="twitch-game">—</div>
+        <div class="stat-value" id="twitch-viewers" style="font-size:24px"></div>
+        <div class="stat-label" id="twitch-uptime"></div>
+      </div>
+      <div class="card">
+        <h3>System</h3>
+        <div class="stat-value"><span id="cpu-pct">0</span><span class="unit">% CPU</span></div>
+        <div class="bar-bg"><div class="bar-fill" id="cpu-bar" style="width:0%"></div></div>
+        <div class="stat-value" style="font-size:18px;margin-top:10px">
+          <span id="ram-used">0</span><span class="unit"> / </span><span id="ram-total">0</span><span class="unit"> GB</span>
+        </div>
+        <div class="bar-bg"><div class="bar-fill" id="ram-bar" style="width:0%"></div></div>
+        <div class="stat-label" id="ram-pct-label">0% used</div>
+        <div class="stat-label" style="margin-top:8px">GPU: <span id="gpu-name" style="color:var(--dim)">—</span></div>
+      </div>
     </div>
-  </div>
 
-  <div class="card update-card" id="update-card" style="flex:none">
-    <h3>Update Available</h3>
-    <div class="update-ver" id="update-ver">—</div>
-    <div class="update-sub">A newer version is on GitHub. Your current files are backed up before installing.</div>
-    <button class="update-btn" id="update-btn" onclick="installUpdate()">Download &amp; Install</button>
-    <div class="update-msg" id="update-msg"></div>
-  </div>
-
-  <div class="card" style="flex:none">
-    <h3>Scene Set</h3>
-    <div class="scene-active unknown" id="scene-active">Detecting…</div>
-    <div class="scene-sub">Active theme served at <code>/overlays/active/</code></div>
-    <div class="scene-btns" id="scene-btns"></div>
-    <div class="scene-msg" id="scene-msg"></div>
-  </div>
-
-  <div class="card" id="interactive-card" style="flex:none">
-    <h3>Interactive · Games &amp; Redeems</h3>
-    <div><span class="status-dot" id="ix-auth-dot"></span><span id="ix-auth-label">Checking…</span></div>
-    <div class="scene-sub" id="ix-auth-hint" style="margin:6px 0 0"></div>
-    <button class="update-btn" id="ix-auth-btn" style="display:none;margin-top:10px;background:linear-gradient(135deg,#a78bfa,#7c3aed);color:#fff" onclick="ixAuthorize()">Login with Twitch</button>
-    <button class="scene-btn" id="ix-logout-btn" style="display:none;margin-top:10px" onclick="ixLogout()">Sign out</button>
-    <div class="ix-grid" style="margin-top:14px">
-      <button class="scene-btn" onclick="ixTest('coinflip')">🪙 Coin Flip</button>
-      <button class="scene-btn" onclick="ixTest('5050')">🎲 50 / 50</button>
-      <button class="scene-btn" onclick="ixTest('slots')">🎰 Slots</button>
-      <button class="scene-btn" onclick="ixTest('lucky')">🍀 Lucky Wheel</button>
-      <button class="scene-btn" onclick="ixTest('risky')">☠️ Risky Wheel</button>
-      <button class="scene-btn" onclick="ixReload()">♻️ Reload config</button>
+    <div class="card update-card" id="update-card" style="flex:none">
+      <h3>Update Available</h3>
+      <div class="update-ver" id="update-ver">—</div>
+      <div class="update-sub">A newer version is on GitHub. Your current files are backed up before installing.</div>
+      <button class="btn-primary" id="update-btn" data-act="update-install">Download &amp; Install</button>
+      <div class="update-msg" id="update-msg" aria-live="polite"></div>
     </div>
-    <div class="scene-msg" id="ix-msg"></div>
-    <div class="ix-meta" id="ix-meta"></div>
-    <div class="scene-sub" style="margin-top:14px">Overlay browser sources — transparent, 1920×1080, above your scene:</div>
-    <div class="url-list">
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/static/interactive/wheel.html</code><span class="hint">Copy</span></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/static/interactive/coinflip.html</code><span class="hint">Copy</span></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/static/interactive/slots.html</code><span class="hint">Copy</span></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/static/interactive/hype.html</code><span class="hint">Copy</span></div>
-    </div>
-    <div class="scene-sub" style="margin-top:14px">Leaderboard:</div>
-    <div class="ix-board" id="ix-board"><div class="stat-label">No plays yet.</div></div>
-    <div class="scene-sub" style="margin-top:14px">Recent results:</div>
-    <div class="ix-feed" id="ix-feed"><div class="stat-label">No spins yet.</div></div>
-  </div>
 
-  <div class="card" style="flex:none">
-    <h3>Overlay URLs</h3>
-    <div class="scene-sub">Point OBS at these — they stay the same across theme switches.</div>
-    <div class="url-list">
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/active/starting-soon.html</code><span class="hint">Copy</span></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/active/be-right-back.html</code><span class="hint">Copy</span></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/active/stream-ending.html</code><span class="hint">Copy</span></div>
-      <div class="url-item" onclick="copyUrl(this)" title="Click to copy full URL"><code>/overlays/active/tech-difficulties.html</code><span class="hint">Copy</span></div>
+    <div class="card" style="flex:none">
+      <h3>Overlay Scene Set</h3>
+      <div class="scene-active unknown" id="scene-active">Detecting…</div>
+      <div class="scene-sub">Active theme served at <code>/overlays/active/</code></div>
+      <div class="scene-btns" id="scene-btns"></div>
+      <div class="scene-msg" id="scene-msg" aria-live="polite"></div>
     </div>
-  </div>
 
-  <div class="card log-card">
-    <h3>Request Log</h3>
-    <div class="log-box" id="log-box">
-      <div class="log-entry">Waiting for data...</div>
+    <div class="card" style="flex:none">
+      <h3>Overlay URLs</h3>
+      <div class="scene-sub">Point OBS at these — they stay the same across theme switches.</div>
+      <div class="url-list">
+        <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/overlays/active/starting-soon.html</code><span class="hint">Copy</span></div>
+        <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/overlays/active/be-right-back.html</code><span class="hint">Copy</span></div>
+        <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/overlays/active/stream-ending.html</code><span class="hint">Copy</span></div>
+        <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/overlays/active/tech-difficulties.html</code><span class="hint">Copy</span></div>
+      </div>
     </div>
-  </div>
-</div>
+  </section>
+
+  <!-- ── Interactive ──────────────────────────────────────────── -->
+  <section class="tab-panel" id="tab-interactive">
+    <div class="card" style="flex:none">
+      <h3>Twitch Connection</h3>
+      <div class="auth-row"><span class="status-dot" id="ix-auth-dot"></span><span id="ix-auth-label">Checking…</span></div>
+      <div class="scene-sub" id="ix-auth-hint" style="margin:8px 0 0"></div>
+      <div class="auth-actions">
+        <button class="btn-primary" id="ix-auth-btn" style="display:none" data-act="ix-auth">Login with Twitch</button>
+        <button class="scene-btn" id="ix-logout-btn" style="display:none;flex:0 0 auto" data-act="ix-logout">Sign out</button>
+      </div>
+      <div class="ix-meta" id="ix-meta"></div>
+    </div>
+
+    <div class="card" style="flex:none">
+      <h3>Quick Test</h3>
+      <div class="scene-sub">Fire an effect straight to your overlays (and chat if connected).</div>
+      <div class="ix-grid">
+        <button class="scene-btn" data-test="coinflip">🪙 Coin Flip</button>
+        <button class="scene-btn" data-test="5050">🎲 50 / 50</button>
+        <button class="scene-btn" data-test="slots">🎰 Slots</button>
+        <button class="scene-btn" data-test="lucky">🍀 Lucky Wheel</button>
+        <button class="scene-btn" data-test="risky">☠️ Risky Wheel</button>
+        <button class="scene-btn" data-test="follow">💜 New Follow</button>
+        <button class="scene-btn" data-test="firstchat">👋 First Chat</button>
+        <button class="scene-btn" data-act="ix-reload">♻️ Reload config</button>
+      </div>
+      <div class="scene-msg" id="ix-msg" aria-live="polite"></div>
+    </div>
+
+    <div class="card" style="flex:none" id="spotify-card">
+      <h3>Spotify · Now Playing</h3>
+      <div id="spotify-body"><div class="stat-label">Loading…</div></div>
+    </div>
+
+    <div class="card" style="flex:none">
+      <h3>Live Overlay Preview</h3>
+      <div class="scene-sub">Watch your overlays react — the Quick Test buttons above show here too. (This is a live view of the real overlay.)</div>
+      <div class="preview-tabs" id="preview-tabs">
+        <button class="scene-btn preview-btn active" data-preview="wheel">Wheel</button>
+        <button class="scene-btn preview-btn" data-preview="coinflip">Coin / 50-50</button>
+        <button class="scene-btn preview-btn" data-preview="slots">Slots</button>
+        <button class="scene-btn preview-btn" data-preview="hype">Hype</button>
+      </div>
+      <div class="preview-frame" id="preview-frame">
+        <iframe id="preview-iframe" src="/static/interactive/wheel.html?muted" title="Overlay preview"></iframe>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="card">
+        <h3>Leaderboard</h3>
+        <div class="ix-board" id="ix-board"><div class="stat-label">No plays yet.</div></div>
+      </div>
+      <div class="card">
+        <h3>Recent Results</h3>
+        <div class="ix-feed" id="ix-feed"><div class="stat-label">No spins yet.</div></div>
+      </div>
+    </div>
+
+    <div class="card" style="flex:none">
+      <h3>Overlay Browser Sources</h3>
+      <div class="scene-sub">Transparent, 1920×1080, placed above your scene.</div>
+      <div class="url-list">
+        <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/static/interactive/wheel.html</code><span class="hint">Copy</span></div>
+        <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/static/interactive/coinflip.html</code><span class="hint">Copy</span></div>
+        <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/static/interactive/slots.html</code><span class="hint">Copy</span></div>
+        <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/static/interactive/hype.html</code><span class="hint">Copy</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Commands ─────────────────────────────────────────────── -->
+  <section class="tab-panel" id="tab-commands">
+    <div class="card" style="flex:none">
+      <h3>Built-in Commands</h3>
+      <div class="scene-sub">Toggle any command off to let another bot own it (e.g. SoundAlerts).</div>
+      <div id="cmd-builtins" class="cmd-list"><div class="stat-label">Loading…</div></div>
+    </div>
+    <div class="card" style="flex:none">
+      <h3>Custom Commands</h3>
+      <div class="scene-sub">Simple <code>!name → response</code> replies. Variables: <code>{user}</code>, <code>{args}</code>, <code>{1}</code>…</div>
+      <div id="cmd-custom" class="cmd-list"><div class="stat-label">Loading…</div></div>
+      <div class="form-grid" style="margin-top:14px">
+        <input class="field" id="cc-name" placeholder="name (e.g. socials)" maxlength="25" aria-label="Command name">
+        <select class="field" id="cc-perm" aria-label="Permission">
+          <option value="everyone">Everyone</option>
+          <option value="mods">Mods only</option>
+        </select>
+        <input class="field field-wide" id="cc-response" placeholder="Response text, e.g. Follow me at twitch.tv/{user}" maxlength="400" aria-label="Response">
+        <button class="btn-primary" data-act="cc-add">Add command</button>
+      </div>
+      <div class="scene-msg" id="cmd-msg" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- ── Timers ───────────────────────────────────────────────── -->
+  <section class="tab-panel" id="tab-timers">
+    <div class="card" style="flex:none">
+      <h3>Timed Messages</h3>
+      <div class="scene-sub">Auto-post to chat on an interval. A timer only fires once at least its “min lines” of chat have passed, so it won’t spam a quiet chat.</div>
+      <div class="cfg-row2"><span class="lbl">Timed messages enabled</span><label class="switch"><input type="checkbox" id="tm-enabled"><span class="track"></span><span class="knob"></span></label></div>
+      <div id="timer-list" style="margin-top:12px"></div>
+      <div class="save-row">
+        <button class="scene-btn" style="flex:0 0 auto" data-act="tm-add">+ Add timer</button>
+        <button class="btn-primary" data-act="tm-save">Save timers</button>
+      </div>
+      <div class="scene-msg" id="tm-msg" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- ── Quotes ───────────────────────────────────────────────── -->
+  <section class="tab-panel" id="tab-quotes">
+    <div class="card" style="flex:none">
+      <h3>Quotes <span class="mini" id="quote-count"></span></h3>
+      <div class="scene-sub">Manage the quote book. Viewers use <code>!quote [n]</code>; mods can <code>!addquote</code> in chat too.</div>
+      <div class="form-grid" style="margin-top:6px">
+        <input class="field field-wide" id="q-text" placeholder="New quote text…" maxlength="400" aria-label="Quote text">
+        <button class="btn-primary" data-act="q-add" style="grid-column:1/-1;justify-self:start">Add quote</button>
+      </div>
+      <div id="quote-list" class="cmd-list" style="margin-top:14px"><div class="stat-label">Loading…</div></div>
+      <div class="scene-msg" id="q-msg" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- ── Config ───────────────────────────────────────────────── -->
+  <section class="tab-panel" id="tab-config">
+    <div class="card" style="flex:none">
+      <h3>Settings</h3>
+      <div class="scene-sub">Edits save to <code>config.json</code> and apply live — no restart needed.</div>
+      <div id="cfg-root"><div class="stat-label">Loading…</div></div>
+      <div class="scene-msg" id="cfg-msg" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- ── Log ──────────────────────────────────────────────────── -->
+  <section class="tab-panel" id="tab-log">
+    <div class="card log-card">
+      <h3>Request Log</h3>
+      <div class="log-box" id="log-box"><div class="log-entry">Waiting for data…</div></div>
+    </div>
+  </section>
+</main>
 <script src="/static/dashboard.js"></script>
 </body>
 </html>

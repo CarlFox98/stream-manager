@@ -11,10 +11,46 @@ import subprocess
 from .obs_ws import get_obs_ws_status
 
 
+_OBS_PROC_NAMES = ("obs64.exe", "obs32.exe", "obs.exe", "obs")
+
+
 def get_obs_status(state):
     if get_obs_ws_status(state):
         return
+    if _get_obs_status_psutil(state):
+        return
     _get_obs_status_tasklist(state)
+
+
+def _get_obs_status_psutil(state):
+    """Cross-platform OBS process detection via psutil (Windows/macOS/Linux).
+    Returns True if psutil is available (authoritative), else False so the
+    Windows tasklist fallback can run."""
+    try:
+        import time
+        import psutil
+    except ImportError:
+        return False
+    # No process-level view of streaming/recording/scene — clear stale WS values.
+    state["obs"]["streaming"] = False
+    state["obs"]["recording"] = False
+    state["obs"]["scene"] = ""
+    for p in psutil.process_iter(["name", "create_time"]):
+        try:
+            if (p.info.get("name") or "").lower() in _OBS_PROC_NAMES:
+                state["obs"]["running"] = True
+                state["obs"]["pid"] = str(p.pid)
+                try:
+                    state["obs"]["uptime"] = int(time.time() - p.info["create_time"])
+                except Exception:
+                    state["obs"]["uptime"] = 0
+                return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    state["obs"]["running"] = False
+    state["obs"]["pid"] = None
+    state["obs"]["uptime"] = 0
+    return True
 
 
 def _get_obs_status_tasklist(state):
