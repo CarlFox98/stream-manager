@@ -624,6 +624,20 @@ h1{{color:{accent};margin:0 0 10px;font-size:22px}}p{{color:#b7a8d6;margin:0}}</
         pass  # suppress default logging
 
 
+class _Server(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        """A browser source refreshing or a long-poll/SSE being torn down aborts
+        the socket mid-response — that's normal, not an error. Swallow the
+        connection-reset family instead of dumping a traceback."""
+        import sys
+        e = sys.exc_info()[1]
+        if isinstance(e, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def try_bind_port(start, host="127.0.0.1"):
     """Try to bind HTTP server on start..start+19. Returns (server, port) or raises."""
     for port in range(start, start + 20):
@@ -632,7 +646,6 @@ def try_bind_port(start, host="127.0.0.1"):
                 _s.bind((host, port))
             except OSError:
                 continue
-        s = ThreadingHTTPServer((host, port), Handler)
-        s.daemon_threads = True   # don't let in-flight requests block shutdown
+        s = _Server((host, port), Handler)
         return s, port
     raise RuntimeError(f"Could not bind to any port in range {start}-{start+19}")
