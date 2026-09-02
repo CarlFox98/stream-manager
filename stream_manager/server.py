@@ -4,7 +4,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import scenes, updater
-from . import actions, chat, commands, effects, eventsub, games, quotes, redeems, spotify, stats, timers, twitch_auth
+from . import actions, chat, commands, effects, eventsub, games, quotes, redeems, shoutout, spotify, stats, timers, twitch_auth
 from . import config as config_mod
 from .config import OVERLAYS_DIR, RESOURCE_DIR, DASHBOARD_PASSWORD, config
 from .console import style
@@ -32,7 +32,7 @@ _PROTECTED_POSTS = {
 
 # config.json sections the dashboard editor may write.
 _EDITABLE_SECTIONS = ("command_prefix", "cooldowns", "wheels", "redeems",
-                      "automation", "eventsub", "alerts")
+                      "automation", "eventsub", "alerts", "shoutout")
 
 
 def _num(v):
@@ -82,6 +82,21 @@ def validate_section(section, data):
         for k, v in data.items():
             if not isinstance(v, bool):
                 return False, f"'{k}' must be on/off"
+        return True, ""
+    if section == "shoutout":
+        for k, v in data.items():
+            if k.startswith("template"):
+                if not isinstance(v, str):
+                    return False, f"'{k}' must be text"
+            elif k in ("blocklist", "raid_allowlist"):
+                if not isinstance(v, list):
+                    return False, f"'{k}' must be a list of logins"
+            elif isinstance(v, bool):
+                continue
+            elif not _num(v):
+                return False, f"'{k}' must be a number or on/off"
+            elif v < 0:
+                return False, f"'{k}' must be ≥ 0"
         return True, ""
     if section == "alerts":
         for k, v in data.items():
@@ -144,12 +159,14 @@ def interactive_status():
         "eventsub": eventsub.public_status(),
         "automation": {"enabled": actions.enabled()},
         "quotes": {"count": quotes.count()},
+        "shoutout": shoutout.public_status(),
         "recent": effects.history(limit=12),
         "overlays": {
             "coinflip": f"{base}/coinflip.html",
             "wheel": f"{base}/wheel.html",
             "slots": f"{base}/slots.html",
             "hype": f"{base}/hype.html",
+            "shoutout": f"{base}/shoutout.html",
         },
     }
 
@@ -237,6 +254,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/timers":
             self.serve_json(timers.public_list()); return
 
+        if parsed.path == "/api/shoutout":
+            self.serve_json(shoutout.public_status()); return
+
         if parsed.path == "/api/spotify":
             self.serve_json(spotify.public_status()); return
 
@@ -309,6 +329,11 @@ class Handler(BaseHTTPRequestHandler):
             self.log("Logged out of Twitch", "!")
             self.serve_json({"ok": True, "auth": twitch_auth.public_status()}); return
 
+        if self.path == "/api/shoutout/clip":
+            body = self._read_json() or {}
+            state = shoutout.set_clip_playing((body.get("type") or "") == "clipstart")
+            self.serve_json({"ok": True, "clip": state}); return
+
         if self.path == "/auth/spotify":
             spotify.begin_authorization(open_browser=True)
             self.serve_json({"ok": True, "spotify": spotify.public_status()}); return
@@ -325,7 +350,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.serve_json({"ok": False, "error": "Invalid request body"}, status=400); return
             action = body.get("action", "")
             say = chat.say if chat.status.get("connected") else None
-            if action in ("follow", "firstchat"):
+            if action == "shoutout":
+                effects.emit("shoutout", shoutout.demo_card(), summary="◇ Shoutout: PixelWitch (test)")
+                result = "shoutout"
+            elif action in ("follow", "firstchat"):
                 # fire the hype overlay directly (bypasses alert de-dupe for testing)
                 labels = {"follow": "💜 New follower", "firstchat": "👋 First chat"}
                 effects.emit("hype", {"kind": action, "user": body.get("user", "Dashboard")},

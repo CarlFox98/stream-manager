@@ -106,8 +106,18 @@ def _on_notification(payload):
         }
         redeems.handle_redemption(reward_id, red)
     elif typ == "channel.raid":
-        _hype("raid", event.get("from_broadcaster_user_name", "Someone"),
-              event.get("viewers", 0))
+        raider = event.get("from_broadcaster_user_name", "Someone")
+        viewers = event.get("viewers", 0)
+        _hype("raid", raider, viewers)
+        # auto-shoutout the raider (guards/approval live in shoutout.py)
+        try:
+            import threading
+            from . import chat, shoutout
+            login = event.get("from_broadcaster_user_login") or raider
+            threading.Thread(target=shoutout.on_raid,
+                             args=(login, viewers, chat.say), daemon=True).start()
+        except Exception as e:
+            print(f"[eventsub] raid shoutout error: {e}")
     elif typ == "channel.cheer":
         _hype("bits", event.get("user_name") or "Anonymous", event.get("bits", 0))
     elif typ == "channel.subscribe":

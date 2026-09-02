@@ -372,6 +372,68 @@ def test_song_command_and_spotify(monkeypatch):
     assert sent and "Now playing" in sent[0]
 
 
+def test_shoutout_normalise_and_guards(monkeypatch, tmp_path):
+    from stream_manager import shoutout
+    monkeypatch.setattr(shoutout, "LOG_FILE", str(tmp_path / "so.jsonl"))
+    monkeypatch.setitem(cfg.config, "shoutout", {"chat_send": True, "mods_only": True})
+    shoutout._until.clear(); shoutout._reserved.clear(); shoutout._state["enabled"] = True
+    # normalisation: @name, full URL, mixed case
+    assert shoutout._norm("@PixelWitch") == "pixelwitch"
+    assert shoutout._norm("https://twitch.tv/PixelWitch") == "pixelwitch"
+    # a successful shoutout emits a card, posts chat, and guards the repeat
+    monkeypatch.setattr(shoutout, "lookup", lambda login: {
+        "name": "PixelWitch", "login": "pixelwitch", "category": "Silksong",
+        "live": False, "clip": "", "hold": 8000})
+    said = []
+    assert shoutout.do_shoutout("@PixelWitch", "command", 0, said.append) is True
+    assert said and "PixelWitch" in said[0]
+    assert any("Shoutout: PixelWitch" in e["text"] for e in effects.history("shoutout"))
+    # immediate repeat is refused by the screen/repeat guard
+    said.clear()
+    assert shoutout.do_shoutout("pixelwitch", "command", 0, said.append) is False
+    assert said == []
+
+
+def test_shoutout_safety_and_controls(monkeypatch, tmp_path):
+    from stream_manager import shoutout
+    monkeypatch.setattr(shoutout, "LOG_FILE", str(tmp_path / "so.jsonl"))
+    monkeypatch.setattr(shoutout, "lookup", lambda login: {"name": login, "login": login, "hold": 1000})
+    shoutout._until.clear(); shoutout._reserved.clear(); shoutout._state["enabled"] = True
+    # blocklist
+    monkeypatch.setitem(cfg.config, "shoutout", {"blocklist": ["baduser"]})
+    assert shoutout.do_shoutout("baduser") is False
+    # raids under the viewer floor are ignored
+    monkeypatch.setitem(cfg.config, "shoutout", {"raid_min_viewers": 5})
+    assert shoutout.do_shoutout("someone", "raid", 2) is False
+    # mod controls
+    said = []
+    shoutout.control("off", say=said.append)
+    assert shoutout._state["enabled"] is False
+    assert shoutout.do_shoutout("anyone") is False        # disabled
+    shoutout.control("on", say=said.append)
+    assert shoutout._state["enabled"] is True
+    assert shoutout.control("status", say=said.append) is True
+    assert shoutout.control("not-a-control") is False
+
+
+def test_so_command_routing(monkeypatch):
+    from stream_manager import shoutout, commands
+    assert commands.canonical_for("shoutout") == "so"
+    monkeypatch.setitem(cfg.config, "shoutout", {"mods_only": True})
+    calls = []
+    monkeypatch.setattr(shoutout, "control", lambda a, say=None: calls.append(("control", a)) or True)
+    sent = []
+    # non-mods are ignored entirely
+    games.handle_command("!so @someone", "viewer", is_mod=False, say=sent.append)
+    assert sent == [] and calls == []
+    # a bare word is a control
+    games.handle_command("!so skip", "mod", is_mod=True, say=sent.append)
+    assert calls and calls[-1] == ("control", "skip")
+    # no argument prints usage
+    games.handle_command("!so", "mod", is_mod=True, say=sent.append)
+    assert any("Usage:" in s for s in sent)
+
+
 def test_validate_alerts():
     from stream_manager import server
     assert server.validate_section("alerts", {"first_chat": True, "first_chat_message": "hi"})[0] is True

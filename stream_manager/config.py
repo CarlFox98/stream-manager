@@ -50,6 +50,8 @@ CONFIG_DEFAULTS = {
     "spotify": {},
     # Viewer alerts: first-time chatters + new followers (see alerts.py).
     "alerts": {},
+    # Shoutouts (!so + auto raid shoutout, clip card overlay) — see shoutout.py.
+    "shoutout": {},
 }
 
 
@@ -70,7 +72,7 @@ def _load_config():
                      ("wheels", dict), ("redeems", dict), ("cooldowns", dict),
                      ("automation", dict), ("eventsub", dict),
                      ("commands", dict), ("timers", dict), ("spotify", dict),
-                     ("alerts", dict)]:
+                     ("alerts", dict), ("shoutout", dict)]:
         if not isinstance(config.get(key), typ):
             print(f"[config] {key} must be {typ}, got {type(config.get(key)).__name__}, using default {CONFIG_DEFAULTS[key]}")
             config[key] = CONFIG_DEFAULTS[key]

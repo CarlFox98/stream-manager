@@ -3,7 +3,7 @@ import argparse, os, sys, threading, webbrowser
 
 from . import __version__
 from . import obs, system, twitch, updater
-from . import chat, redeems, twitch_auth, eventsub, cooldowns, games, stats, timers, spotify
+from . import chat, redeems, twitch_auth, eventsub, cooldowns, games, stats, timers, spotify, shoutout
 from .config import config, TWITCH_USER, TWITCH_CLIENT_ID, DASHBOARD_PASSWORD
 from .console import style, icon, grad
 from .logging_util import setup_file_logging
@@ -205,6 +205,12 @@ def main():
             eventsub.start()  # near-instant redemptions + raid/bits/sub hype (falls back to polling)
             timers.start()    # timed chat messages
             spotify.initialize()  # load cached Spotify token (if the user connected before)
+            try:              # restore clip rotation so restarts don't replay clips
+                n = shoutout.restore_clip_history()
+                if n:
+                    print(f"  {style('D', f'Shoutout clip history restored for {n} streamer(s)')}")
+            except Exception as e:
+                print(f"[shoutout] could not restore clip history: {e}")
 
     if not args.no_browser:
         webbrowser.open(f"http://localhost:{PORT}/dashboard")

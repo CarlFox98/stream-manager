@@ -411,6 +411,20 @@ def handle_command(message, user, is_mod=False, is_broadcaster=False, say=None,
         return True
     if cmd in ("quotecount",):
         say(f"There are {quotes.count()} quotes."); return True
+    if cmd in ("so", "shoutout"):
+        from . import shoutout
+        if shoutout.cfg("mods_only") and not can_edit:
+            return True                       # silently ignore non-mods
+        arg = args[0] if args else ""
+        # a bare word is a mod control ("!so skip"); "@name" is always a target
+        if arg and not arg.startswith("@") and shoutout.control(arg.lower(), say=say):
+            return True
+        if not arg:
+            say(f"Usage: {prefix}so @username  ·  {prefix}so skip|clear|off|on|ok|status")
+            return True
+        threading.Thread(target=shoutout.do_shoutout,
+                         args=(arg, "command", 0, say), daemon=True).start()
+        return True
     if cmd in ("song", "nowplaying", "np"):
         try:
             from . import spotify

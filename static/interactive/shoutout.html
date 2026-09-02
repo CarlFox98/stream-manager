@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PRISM — Shoutout</title>
+<style>
+/* ============================================================
+   PRISM — Shoutout overlay
+   A mod types  !so @user  in chat -> the companion service
+   (prism_shoutout_service.py) pushes a payload here over a
+   local WebSocket, and this card slides in with the user's
+   hex avatar + an autoplaying clip, then fades out.
+
+   HOST THIS on your GitHub Pages repo (carlfox98.github.io/...)
+   so the Twitch clip can autoplay (the embed needs a real
+   domain as its "parent"). Add it as an OBS Browser Source,
+   1920x1080, transparent, above your scene.
+
+   Test layout with ?demo on the URL.
+   ============================================================ */
+@import url('/overlays/PRISM/fonts/prism-fonts.css');   /* vendored — no network at load.
+   scripts/deploy-pages.py rewrites this to fonts/ for the hosted copy. */
+:root{
+  --ink:#EAF0FF; --ink-soft:#A9B4D6;
+  --glass:rgba(14,16,28,0.46); --glass-deep:rgba(10,12,22,0.72);
+  --c1:#57F2E4; --c2:#6C8BFF; --c3:#B983FF; --c4:#FF7ACb; --c5:#FFD86B;
+}
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ width:100%; height:100%; overflow:hidden; background:transparent;
+  font-family:'Space Grotesk','Segoe UI',Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+
+.stage{ position:absolute; inset:0; display:flex; align-items:flex-end; justify-content:center; padding-bottom:70px; }
+
+/* the card */
+.so{ --hex:polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+  display:flex; align-items:center; gap:26px; width:1080px; padding:2px; border-radius:24px; overflow:hidden;
+  background:linear-gradient(var(--glass),var(--glass)) padding-box,
+    linear-gradient(120deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5),var(--c1)) border-box;
+  background-size:100% 100%,320% 100%; border:1.6px solid transparent;
+  -webkit-backdrop-filter:blur(18px) saturate(150%); backdrop-filter:blur(18px) saturate(150%);
+  box-shadow:0 24px 60px rgba(0,0,0,0.55), 0 0 30px rgba(120,140,255,0.16);
+  opacity:0; transform:translateY(70px) scale(0.96); pointer-events:none;
+  animation:flow 12s linear infinite;
+  transition:opacity 0.6s ease, transform 0.6s cubic-bezier(0.16,1,0.3,1); }
+.so.show{ opacity:1; transform:translateY(0) scale(1); }
+.so-inner{ position:relative; display:flex; align-items:center; gap:28px; width:100%; padding:26px 30px; border-radius:22px; background:var(--glass-deep); }
+
+/* left: identity */
+.so-id{ display:flex; flex-direction:column; align-items:center; text-align:center; width:376px; flex-shrink:0; gap:4px; }
+.so-ava{ position:relative; width:132px; height:132px; margin-bottom:8px;
+  filter:drop-shadow(0 0 34px rgba(120,150,255,0.34)); }
+.so-ava::before{ content:""; position:absolute; inset:0; -webkit-clip-path:var(--hex); clip-path:var(--hex);
+  background:linear-gradient(120deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5),var(--c1));
+  background-size:320% 100%; animation:flow 9s linear infinite; }
+.so-ava img{ position:absolute; inset:4px; width:calc(100% - 8px); height:calc(100% - 8px); object-fit:cover;
+  background:#0b0e18; -webkit-clip-path:var(--hex); clip-path:var(--hex); }
+/* stand-in when the avatar is missing or fails to load — an empty <img src="">
+   resolves to this page and paints a broken-image glyph inside the hex */
+.so-ava-letter{ position:absolute; inset:4px; display:none; align-items:center; justify-content:center;
+  -webkit-clip-path:var(--hex); clip-path:var(--hex); background:#0b0e18;
+  font-size:54px; font-weight:700; color:var(--ink-soft); letter-spacing:2px; }
+.so-ava.noimg .so-ava-letter{ display:flex; }
+.so-ava.noimg img{ display:none; }
+.so-eyebrow{ display:inline-flex; align-items:center; gap:9px; font-size:14px; font-weight:700; letter-spacing:5px;
+  text-transform:uppercase; color:var(--c1); text-shadow:0 0 12px rgba(87,242,228,0.5); }
+.so-eyebrow .dot{ width:9px; height:9px; border-radius:50%; background:var(--c1); box-shadow:0 0 8px var(--c1),0 0 16px var(--c1); animation:blip 1.4s ease-in-out infinite; }
+/* LIVE NOW state — magenta accent when the shouted user is streaming right now */
+.so.live .so-eyebrow{ color:var(--c4); text-shadow:0 0 12px rgba(255,122,203,0.6); }
+.so.live .so-eyebrow .dot{ background:var(--c4); box-shadow:0 0 8px var(--c4),0 0 16px var(--c4); animation-duration:0.9s; }
+/* RAID state — gold accent, and the hex picks up the same warmth so a raid
+   reads as a raid from across the room, not just in the eyebrow text */
+.so.raid .so-eyebrow{ color:var(--c5); text-shadow:0 0 12px rgba(255,216,107,0.6); }
+.so.raid .so-eyebrow .dot{ background:var(--c5); box-shadow:0 0 8px var(--c5),0 0 16px var(--c5); animation-duration:0.75s; }
+.so.raid .so-ava{ filter:drop-shadow(0 0 38px rgba(255,216,107,0.42)); }
+.so-name{ font-size:44px; font-weight:700; line-height:1.06; letter-spacing:0.5px; width:100%; max-width:100%; overflow-wrap:break-word;
+  background:linear-gradient(100deg,var(--c1),var(--c2),#ffffff 45%,var(--c3),var(--c4)); background-size:250% 100%;
+  -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  filter:drop-shadow(0 0 20px rgba(140,170,255,0.35)); animation:shimmer 7s linear infinite; }
+.so-cat{ font-size:16px; color:var(--ink-soft); letter-spacing:1px; text-wrap:balance; }
+.so-cat b{ color:var(--ink); font-weight:600; }
+.so-handle{ margin-top:2px; font-family:'JetBrains Mono',monospace; font-size:14px; color:var(--c3); letter-spacing:0.5px; }
+
+/* right: clip */
+.so-clip{ position:relative; width:600px; height:338px; flex-shrink:0; border-radius:16px; overflow:hidden;
+  background:#05060c; box-shadow:0 0 0 1.5px rgba(120,150,255,0.25), inset 0 0 0 1px rgba(255,255,255,0.05); }
+.so-clip iframe{ position:absolute; inset:0; width:100%; height:100%; border:0; }
+.so-clip video{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#05060c; }
+.so-clip .noclip{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:8px;
+  color:var(--ink-soft); font-size:16px; letter-spacing:2px; text-transform:uppercase;
+  background:radial-gradient(600px 400px at 50% 40%, rgba(108,139,255,0.14), transparent 70%); }
+.so-clip .noclip svg{ width:44px; height:44px; opacity:0.6; }
+.so-clip img.thumb{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+/* no clip to play? fall back to their offline banner instead of a grey panel */
+.so-clip img.offline{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover;
+  opacity:0.62; filter:saturate(0.9); }
+.so-clip .noclip{ z-index:2; }
+.so-clip.has-offline .noclip{ color:var(--ink);
+  background:radial-gradient(420px 260px at 50% 50%, rgba(5,6,12,0.82), rgba(5,6,12,0.18) 72%);
+  text-shadow:0 2px 14px rgba(0,0,0,0.95); }
+.so-clip.has-offline .noclip{ justify-content:flex-end; padding-bottom:20px; gap:4px; }
+.so-clip.has-offline .noclip svg{ width:26px; height:26px; opacity:0.8; }
+
+/* time-remaining rail along the bottom edge of the card */
+.so-rail{ position:absolute; left:0; right:0; bottom:0; height:3px; overflow:hidden;
+  background:rgba(255,255,255,0.06); border-radius:0 0 22px 22px; }
+.so-rail i{ display:block; height:100%; transform:scaleX(1); transform-origin:left center;
+  background:linear-gradient(90deg,var(--c1),var(--c2),var(--c3),var(--c4),var(--c5)); }
+
+/* staggered reveal — the card assembles instead of arriving as one block */
+.so-ava,.so-eyebrow,.so-name,.so-handle,.so-cat,.so-clip{
+  opacity:0; transform:translateY(16px);
+  transition:opacity 0.5s ease, transform 0.5s cubic-bezier(0.16,1,0.3,1); }
+.so.show .so-ava,.so.show .so-eyebrow,.so.show .so-name,
+.so.show .so-handle,.so.show .so-cat,.so.show .so-clip{ opacity:1; transform:translateY(0); }
+.so.show .so-ava{ transition-delay:0.06s; }
+.so.show .so-clip{ transition-delay:0.16s; }
+.so.show .so-eyebrow{ transition-delay:0.14s; }
+.so.show .so-name{ transition-delay:0.20s; }
+.so.show .so-handle{ transition-delay:0.26s; }
+.so.show .so-cat{ transition-delay:0.30s; }
+
+@keyframes flow{ 0%{background-position:0% 50%} 100%{background-position:320% 50%} }
+@keyframes shimmer{ 0%{background-position:0% 0%} 100%{background-position:250% 0%} }
+@keyframes blip{ 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.8)} }
+
+@media (prefers-reduced-motion:reduce){
+  .so,.so-ava::before,.so-name{ animation:none; }
+  .so-ava,.so-eyebrow,.so-name,.so-handle,.so-cat,.so-clip{ transition-duration:0.01ms; }
+}
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="so" id="card">
+    <div class="so-inner">
+      <div class="so-id">
+        <div class="so-ava" id="avaWrap"><img id="ava" alt=""><span class="so-ava-letter" id="avaLetter"></span></div>
+        <div class="so-eyebrow"><span class="dot"></span><span id="eyebrow">Shoutout</span></div>
+        <div class="so-name" id="name">Streamer</div>
+        <div class="so-handle" id="handle">@streamer</div>
+        <div class="so-cat" id="cat">Last seen streaming <b>&mdash;</b></div>
+      </div>
+      <div class="so-clip" id="clip">
+        <div class="noclip" id="noclip">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9l5 3-5 3z" fill="currentColor" stroke="none"/></svg>
+          No recent clip
+        </div>
+      </div>
+      <div class="so-rail" aria-hidden="true"><i id="rail"></i></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var CFG = {
+    hold: 18000,                 // ms the card stays before fading (if no clip length given)
+    maxQueue: 5,                 // cards allowed to wait behind the one on screen
+    volume: 0.85,                // clip playback ceiling (service overrides per card)
+    fadeMs: 320,                 // ramp the clip up over this long, with the duck
+    noclipHold: 8000,            // cap the stay once a clip has failed
+    parent: location.hostname || 'localhost'
+  };
+  var card=document.getElementById('card'), ava=document.getElementById('ava'),
+      nameEl=document.getElementById('name'), handleEl=document.getElementById('handle'),
+      catEl=document.getElementById('cat'), clip=document.getElementById('clip'), noclip=document.getElementById('noclip'),
+      eyebrowEl=document.getElementById('eyebrow'), avaWrap=document.getElementById('avaWrap'),
+      avaLetter=document.getElementById('avaLetter'), railEl=document.getElementById('rail');
+  var queue=[], busy=false, holdTimer=null, exitTimer=null, onScreen='', fadeTimer=null;
+  var cardStart=0, cardHold=0, cardNoclipHold=0;  // so a dying clip can shorten what's left
+  var clipActive=false;   // are we currently telling the service a clip is playing?
+
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+
+  // Tell Stream Manager when a clip starts/stops (drives OBS audio ducking).
+  function sendEvt(o){
+    try{
+      fetch('/api/shoutout/clip', {method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(o)})['catch'](function(){});
+    }catch(e){}
+  }
+  function clipStarted(){ if(!clipActive){ clipActive=true; sendEvt({type:'clipstart'}); } }
+  function clipEnded(){ if(clipActive){ clipActive=false; sendEvt({type:'clipend'}); } }
+
+  // Ramp a clip up to its ceiling instead of snapping to full volume. The
+  // service ducks your other sources over the same window, so the clip arrives
+  // WITH the duck rather than on top of it.
+  function fadeInAudio(v, target, ms){
+    if(fadeTimer){ clearInterval(fadeTimer); fadeTimer=null; }
+    var steps = Math.max(1, Math.round(ms/40)), i = 0;
+    try{ v.volume = 0; v.muted = false; }catch(e){}
+    fadeTimer = setInterval(function(){
+      i++;
+      try{ v.volume = Math.min(target, target * i / steps); }catch(e){}
+      if(i >= steps){ clearInterval(fadeTimer); fadeTimer=null; }
+    }, ms/steps);
+  }
+
+  function clearClip(){
+    if(fadeTimer){ clearInterval(fadeTimer); fadeTimer=null; }
+    clipEnded();   // release audio ducking if a clip was playing
+    var v=clip.querySelector('video'); if(v){ try{ v.pause(); }catch(e){} v.removeAttribute('src'); v.remove(); }
+    var f=clip.querySelector('iframe'); if(f) f.remove();
+    var t=clip.querySelector('img.thumb'); if(t) t.remove();
+    var o=clip.querySelector('img.offline'); if(o) o.remove();
+    clip.classList.remove('has-offline');
+    noclip.style.display='flex';
+  }
+  function showThumb(url){
+    if(!url){ noclip.style.display='flex'; return; }
+    noclip.style.display='none';
+    var im=document.createElement('img'); im.className='thumb'; im.src=url; clip.appendChild(im);
+  }
+  // Nothing to play: their offline banner reads far better than a grey panel,
+  // and Twitch already hands it to us in the same /users response.
+  function showNoClip(d){
+    noclip.style.display='flex';
+    if(d && d.offline){
+      var im=document.createElement('img'); im.className='offline'; im.src=d.offline;
+      im.onerror=function(){ im.remove(); clip.classList.remove('has-offline'); };
+      clip.appendChild(im);
+      clip.classList.add('has-offline');
+    }
+  }
+  // The clip died after the service already sized the card from its duration —
+  // don't sit on a dead frame for the rest of that runtime.
+  function shortenHold(){
+    // busy stays true through the 700ms exit, and the video is still in the
+    // DOM and can still error during it — arming a timer here would outlive
+    // this card and cut the NEXT one short.
+    if(!busy || exitTimer) return;
+    var left = Math.max(0, cardHold - (Date.now() - cardStart));
+    var target = Math.min(left, cardNoclipHold || CFG.noclipHold);
+    if(holdTimer){ clearTimeout(holdTimer); holdTimer = null; }
+    holdTimer = setTimeout(endCard, target);
+    startRail(target, cardHold ? left / cardHold : 1);
+  }
+  // `from` is where the rail already sits (0-1), so shortening the hold
+  // continues the countdown instead of snapping the bar back to full
+  function startRail(ms, from){
+    if(!railEl) return;
+    var f = (typeof from === 'number') ? Math.max(0, Math.min(1, from)) : 1;
+    railEl.style.transition = 'none';
+    railEl.style.transform  = 'scaleX(' + f + ')';
+    void railEl.offsetWidth;                       // commit before transitioning
+    railEl.style.transition = 'transform ' + ms + 'ms linear';
+    railEl.style.transform  = 'scaleX(0)';
+  }
+  // Twitch allows 25 characters. At a fixed 44px a 13-character name already
+  // wrapped mid-word and shoved the rest of the column around, so the card's
+  // proportions changed depending on who you shouted out.
+  function fitName(text){
+    nameEl.textContent = text;
+    nameEl.style.whiteSpace = 'nowrap';
+    var size = 44;
+    nameEl.style.fontSize = size + 'px';
+    while(size > 22 && nameEl.scrollWidth > nameEl.clientWidth){
+      size -= 1;
+      nameEl.style.fontSize = size + 'px';
+    }
+    // still too wide at the floor (a 25-char all-caps name)? wrap, don't clip
+    nameEl.style.whiteSpace = (nameEl.scrollWidth > nameEl.clientWidth) ? 'normal' : 'nowrap';
+  }
+  function setAvatar(d){
+    var url = d.avatar || '';
+    avaLetter.textContent = String(d.name || d.login || '?').charAt(0).toUpperCase();
+    if(!url){ avaWrap.classList.add('noimg'); ava.removeAttribute('src'); return; }
+    avaWrap.classList.remove('noimg');
+    ava.onerror = function(){ avaWrap.classList.add('noimg'); };
+    ava.src = url;
+  }
+  function setClip(d){
+    clearClip();
+    if(d.clip){                       // direct mp4 — autoplays, no mature gate
+      noclip.style.display='none';
+      var v=document.createElement('video');
+      // muted autoplay is ALWAYS allowed; we unmute the moment it's actually playing
+      v.autoplay=true; v.muted=true; v.defaultMuted=true; v.playsInline=true; v.preload='auto';
+      v.setAttribute('autoplay',''); v.setAttribute('muted',''); v.setAttribute('playsinline','');
+      v.onerror=function(){ clipEnded(); v.remove(); if(d.thumb){ showThumb(d.thumb); } else { showNoClip(d); } shortenHold(); };
+      var vol  = (typeof d.volume === 'number') ? d.volume : CFG.volume;
+      var fade = (typeof d.fadeMs === 'number') ? d.fadeMs : CFG.fadeMs;
+      v.addEventListener('playing', function(){
+        clipStarted();   // tell the service real audio has begun → duck other sources
+        fadeInAudio(v, vol, fade);
+      }, {once:true});
+      v.addEventListener('ended', clipEnded, {once:true});
+      v.src=d.clip;
+      clip.appendChild(v);
+      var tries=0;
+      (function kick(){ var p=v.play(); if(p && p.catch){ p.catch(function(){ if(tries++<20) setTimeout(kick,250); }); } })();
+    } else if(d.thumb){
+      showThumb(d.thumb);
+    } else {
+      showNoClip(d);
+    }
+  }
+
+  function play(d){
+    busy=true;
+    // any throw below would otherwise leave busy stuck true and the overlay
+    // silently dead until the Browser Source is refreshed
+    try{ render(d); }
+    catch(e){
+      try{ console.error('[prism-shoutout] card failed', e); }catch(_){}
+      endCard();
+    }
+  }
+  function render(d){
+    // a fresh card owns the timers; never inherit one from the card before it
+    if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; }
+    if(exitTimer){ clearTimeout(exitTimer); exitTimer=null; }
+    onScreen = String(d.login||'').toLowerCase();
+    fitName(String(d.name || d.login || 'Streamer'));
+    handleEl.textContent = '@' + String(d.login || d.name || '').toLowerCase();
+    card.classList.remove('live');
+    card.classList.remove('raid');
+    if(d.raid){
+      card.classList.add('raid');
+      eyebrowEl.textContent = 'Raid' + (d.raiders > 0
+        ? ' \u00b7 ' + d.raiders + ' viewer' + (d.raiders === 1 ? '' : 's') : '');
+    } else if(d.live){
+      card.classList.add('live');
+      eyebrowEl.textContent = 'Live Now';
+    } else {
+      eyebrowEl.textContent = 'Shoutout';
+    }
+    if(d.category){
+      catEl.innerHTML = (d.live ? 'Live now &middot; <b>' : 'Last seen streaming <b>')
+        + esc(d.category) + '</b>';
+    } else {
+      catEl.innerHTML = d.live ? 'Live right now &mdash; go watch!' : 'Go give them a follow';
+    }
+    setAvatar(d);
+    setClip(d);
+    // show
+    cardHold = d.hold || CFG.hold;
+    cardNoclipHold = d.noclipHold || CFG.noclipHold;
+    cardStart = Date.now();
+    requestAnimationFrame(function(){ card.classList.add('show'); startRail(cardHold, 1); });
+    holdTimer = setTimeout(endCard, cardHold);
+  }
+  // retire the card that's on screen (its hold elapsed, or a mod skipped it)
+  function endCard(){
+    if(holdTimer){ clearTimeout(holdTimer); holdTimer=null; }
+    if(exitTimer) return;            // already leaving — don't restart the exit
+    card.classList.remove('show');
+    exitTimer = setTimeout(function(){
+      exitTimer=null; onScreen=''; clearClip(); busy=false; next();
+    }, 700);
+  }
+  function next(){ if(busy) return; var d=queue.shift(); if(d) play(d); }
+
+  // The service guards repeats too, but the overlay is the last line: it also
+  // sees cards from any other source pointed at this WebSocket.
+  function queued(login){
+    for(var i=0;i<queue.length;i++){
+      if(String(queue[i].login||'').toLowerCase() === login) return true;
+    }
+    return false;
+  }
+  function enqueue(d){
+    if(!d || typeof d !== 'object') return;
+    // String() everywhere: anything can be pointed at this WebSocket, and a
+    // non-string here used to throw before play()'s guard could catch it
+    var login = String(d.login||'').toLowerCase();
+    if(login && (login === onScreen || queued(login))) return;   // already showing/waiting
+    if(queue.length >= CFG.maxQueue) return;                     // backed up — drop it
+    queue.push(d);
+    next();
+  }
+
+  /* ---- mod controls pushed from the service (!so skip / !so clear) ---- */
+  function control(action){
+    if(action === 'clear'){ queue.length = 0; }
+    if(busy) endCard();
+  }
+
+
+  /* ---- Stream Manager effects link (long-poll; same as the other overlays) ----
+     The server holds each request open until a card is emitted, so delivery is
+     effectively instant with very few requests. */
+  var CHANNEL='shoutout', POLL_MS=700, lastId=0;
+  function handle(d){
+    if(!d || typeof d !== 'object') return;
+    if(d.control){ control(String(d.control)); return; }   // !so skip / !so clear
+    if(d.login || d.name) enqueue(d);
+  }
+  function poll(){
+    fetch('/api/effects/'+CHANNEL+'?since='+lastId, {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        lastId = (d.last_id != null ? d.last_id : lastId);
+        (d.events||[]).forEach(function(ev){ handle(ev.data); });
+      })
+      ['catch'](function(){})
+      ['finally'](function(){ setTimeout(poll, POLL_MS); });
+  }
+  poll();
+
+  /* The name is measured against whatever font is active. With the fonts now
+     vendored rather than pulled from Google, the first card after OBS loads
+     the source can be measured against the fallback — re-fit once they land. */
+  if(document.fonts && document.fonts.ready && document.fonts.ready.then){
+    document.fonts.ready.then(function(){
+      if(busy && nameEl.textContent) fitName(nameEl.textContent);
+    })['catch'](function(){});
+  }
+
+  /* ---- test hook ----
+     Lets scripts/test-shoutout-overlay.mjs drive the queue without a browser.
+     Inert in OBS; nothing reads it at runtime. */
+  window.PRISM_SHOUTOUT = {
+    enqueue: enqueue,
+    control: control,
+    shortenHold: shortenHold,
+    state: function(){ return { queued: queue.length, busy: busy, onScreen: onScreen }; }
+  };
+
+  /* ---- demo ---- */
+  if(new URLSearchParams(location.search).has('demo')){
+    enqueue({ name:'PixelWitch', login:'pixelwitch', category:'Hollow Knight: Silksong',
+      avatar:"data:image/svg+xml,"+encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='#6C8BFF'/><stop offset='1' stop-color='#FF7ACb'/></linearGradient></defs><rect width='200' height='200' fill='url(#g)'/><circle cx='100' cy='78' r='38' fill='#ffffff' opacity='0.55'/></svg>"),
+      hold: 60000 });
+  }
+})();
+</script>
+</body>
+</html>

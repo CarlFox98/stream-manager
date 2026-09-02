@@ -65,6 +65,12 @@ def _app_access_token():
         return None
 
 
+def invalidate_token():
+    """Drop the cached app token so the next call re-authenticates (used on 401)."""
+    _twitch_token["access_token"] = None
+    _twitch_token["expires_at"] = 0
+
+
 def get_access_token():
     """A usable bearer token for public Helix reads — user token preferred."""
     try:

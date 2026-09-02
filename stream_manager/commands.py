@@ -33,6 +33,7 @@ BUILTINS = [
     ("addquote",   ["addquote"],                        "Add a quote (mods)",            "Quotes", True),
     ("delquote",   ["delquote"],                        "Delete a quote (mods)",         "Quotes", True),
     ("quotecount", ["quotecount"],                      "How many quotes there are",     "Quotes", False),
+    ("so",         ["so", "shoutout"],                  "Shout out a streamer (+ clip card)", "Mod", True),
     ("song",       ["song", "nowplaying", "np"],        "Show the current Spotify track", "Music",  False),
     ("commands",   ["commands", "help"],                "List available commands",       "Meta",   False),
 ]
