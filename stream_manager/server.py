@@ -4,7 +4,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import scenes, updater
-from . import actions, chat, commands, effects, eventsub, games, quotes, redeems, shoutout, spotify, stats, timers, twitch_auth
+from . import actions, chat, commands, effects, eventsub, games, health, quotes, redeems, shoutout, spotify, stats, timers, twitch_auth
 from . import config as config_mod
 from .config import OVERLAYS_DIR, RESOURCE_DIR, DASHBOARD_PASSWORD, config
 from .console import style
@@ -32,7 +32,7 @@ _PROTECTED_POSTS = {
 
 # config.json sections the dashboard editor may write.
 _EDITABLE_SECTIONS = ("command_prefix", "cooldowns", "wheels", "redeems",
-                      "automation", "eventsub", "alerts", "shoutout")
+                      "automation", "eventsub", "alerts", "shoutout", "health")
 
 
 def _num(v):
@@ -105,6 +105,20 @@ def validate_section(section, data):
                     return False, f"'{k}' must be text"
             elif not isinstance(v, bool):
                 return False, f"'{k}' must be on/off"
+        return True, ""
+    if section == "health":
+        for k, v in data.items():
+            if k == "chat_template":
+                if not isinstance(v, str):
+                    return False, "'chat_template' must be text"
+            elif isinstance(v, bool):
+                continue
+            elif not _num(v):
+                return False, f"'{k}' must be a number or on/off"
+            elif v < 0:
+                return False, f"'{k}' must be \u2265 0"
+        if _num(data.get("poll_sec")) and data["poll_sec"] < 2:
+            return False, "'poll_sec' must be at least 2 seconds"
         return True, ""
     return True, ""
 
@@ -230,6 +244,7 @@ class Handler(BaseHTTPRequestHandler):
                 since = int(qs.get("since", ["0"])[0])
             except (ValueError, TypeError):
                 since = 0
+            effects.note_poll(channel)   # overlay heartbeat (health monitor)
             # Long-poll once the consumer is established (since>0): hold the
             # request open until a new effect fires. First poll (since=0)
             # returns immediately so overlays get the current head id.
@@ -253,6 +268,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/timers":
             self.serve_json(timers.public_list()); return
+
+        if parsed.path == "/api/health/monitor":
+            self.serve_json(health.public_status()); return
+
+        if parsed.path == "/api/health/preflight":
+            self.serve_json(health.preflight()); return
 
         if parsed.path == "/api/shoutout":
             self.serve_json(shoutout.public_status()); return

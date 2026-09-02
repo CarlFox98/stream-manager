@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body>
+<div class="health-banner" id="health-banner" role="alert"></div>
 <div class="conn-banner" id="conn-banner" role="status">Connection to Stream Manager lost — retrying…</div>
 <div class="toast-wrap" id="toast-wrap" aria-live="polite"></div>
 
@@ -34,13 +35,14 @@
     <div class="brand">
       <span class="word">Stream Manager</span>
       <span class="tag">Control Center</span>
-      <span class="ver-chip">v0.8.0</span>
+      <span class="ver-chip">v0.9.0</span>
     </div>
     <div class="conn-pill" id="conn-pill"><span class="status-dot on"></span><span id="conn-text">Live</span></div>
   </header>
 
   <nav class="tabs" id="tabs" role="tablist">
     <button class="tab active" data-tab="overview" role="tab">Overview</button>
+    <button class="tab" data-tab="health" role="tab">Health</button>
     <button class="tab" data-tab="interactive" role="tab">Interactive</button>
     <button class="tab" data-tab="commands" role="tab">Commands</button>
     <button class="tab" data-tab="timers" role="tab">Timers</button>
@@ -107,6 +109,34 @@
         <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/overlays/active/stream-ending.html</code><span class="hint">Copy</span></div>
         <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/overlays/active/tech-difficulties.html</code><span class="hint">Copy</span></div>
       </div>
+    </div>
+  </section>
+
+  <!-- ── Stream Health ────────────────────────────────────────── -->
+  <section class="tab-panel" id="tab-health">
+    <div class="card" style="flex:none">
+      <h3>Preflight — ready to stream?</h3>
+      <div class="scene-sub">Checks auth, chat, EventSub, OBS, overlays and disk before you go live.</div>
+      <div class="save-row">
+        <button class="btn-primary" data-act="preflight">Run preflight check</button>
+        <span class="mini" id="pf-summary"></span>
+      </div>
+      <div id="pf-list" class="cmd-list"></div>
+    </div>
+
+    <div class="card" style="flex:none">
+      <h3>Live Metrics</h3>
+      <div class="scene-sub" id="hm-sub">Waiting for OBS…</div>
+      <div class="metric-grid" id="hm-metrics"></div>
+      <div class="save-row">
+        <button class="scene-btn" style="flex:0 0 auto" id="hm-mute" data-act="hm-mute">Mute alerts</button>
+        <span class="mini">Critical alerts show a banner, a toast and a short beep.</span>
+      </div>
+    </div>
+
+    <div class="card" style="flex:none">
+      <h3>Checks</h3>
+      <div class="cmd-list" id="hm-checks"><div class="stat-label">Loading…</div></div>
     </div>
   </section>
 

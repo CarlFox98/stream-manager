@@ -421,3 +421,35 @@ textarea.field { min-height: 120px; resize: vertical; font-family: 'JetBrains Mo
   .card { min-width: 0; }
   .ix-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ── Stream Health Monitor ───────────────────────────────────────────── */
+.health-banner { position: sticky; top: 0; z-index: 50; display: none;
+  text-align: center; font-size: 13.5px; font-weight: 700; color: #2a0009;
+  background: linear-gradient(135deg, #ff7a90, #ffb36b);
+  padding: 11px 14px; border-radius: 0 0 12px 12px;
+  box-shadow: 0 6px 22px rgba(255,122,144,0.28); }
+.health-banner.show { display: block; animation: hbPulse 2.2s ease-in-out infinite; }
+.health-banner.warn { color: #241a00; background: var(--grad-warm); box-shadow: none; animation: none; }
+@keyframes hbPulse { 0%,100% { filter: brightness(1); } 50% { filter: brightness(1.16); } }
+
+.metric-grid { display: grid; gap: 10px; margin-top: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+.metric { padding: 12px 13px; border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.035); border: 1px solid var(--border); }
+.metric .m-label { font-size: 10px; font-weight: 800; letter-spacing: 1.1px;
+  text-transform: uppercase; color: var(--faint); }
+.metric .m-val { font-size: 21px; font-weight: 800; margin-top: 5px;
+  font-family: 'JetBrains Mono', monospace; color: var(--text); }
+.metric .m-val .unit { font-size: 11px; font-weight: 600; color: var(--mute); margin-left: 3px; }
+.metric.ok   .m-val { color: var(--ok); }
+.metric.warn .m-val { color: var(--warn); }
+.metric.bad  { border-color: rgba(255,122,144,0.5); background: rgba(255,122,144,0.08); }
+.metric.bad  .m-val { color: var(--err); }
+
+.chk-row { display: flex; align-items: center; gap: 11px; padding: 9px 12px;
+  border-radius: var(--radius-sm); background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border); }
+.chk-row .chk-label { font-size: 13px; font-weight: 600; flex: 0 0 auto; min-width: 168px; }
+.chk-row .chk-msg { font-size: 12px; color: var(--dim); flex: 1; }
+.chk-row.warn { border-color: rgba(255,216,107,0.4); }
+.chk-row.bad  { border-color: rgba(255,122,144,0.5); background: rgba(255,122,144,0.07); }

@@ -67,6 +67,44 @@ def _request(ws, request_type):
     return resp.get("responseData", {})
 
 
+def fetch_stats():
+    """One connection, both stats calls — the numbers the health monitor needs.
+
+    Returns {"ok": bool, "stats": {...}, "stream": {...}} where:
+      stats  (GetStats)        cpuUsage, memoryUsage, availableDiskSpace, activeFps,
+                               averageFrameRenderTime, renderSkippedFrames/renderTotalFrames
+                               (rendering lag), outputSkippedFrames/outputTotalFrames
+                               (encoding lag)
+      stream (GetStreamStatus) outputActive, outputReconnecting, outputCongestion,
+                               outputBytes, outputDuration, and
+                               outputSkippedFrames/outputTotalFrames — the frames the
+                               stream output dropped, i.e. the network drops that show
+                               up in OBS as "dropped frames (network)".
+    """
+    if websocket is None:
+        return {"ok": False, "stats": {}, "stream": {}}
+    try:
+        ws = _connect()
+    except Exception:
+        return {"ok": False, "stats": {}, "stream": {}}
+    out = {"ok": True, "stats": {}, "stream": {}}
+    try:
+        try:
+            out["stats"] = _request(ws, "GetStats") or {}
+        except Exception:
+            pass
+        try:
+            out["stream"] = _request(ws, "GetStreamStatus") or {}
+        except Exception:
+            pass
+        return out
+    finally:
+        try:
+            ws.close()
+        except Exception:
+            pass
+
+
 def get_obs_ws_status(state):
     """
     Poll OBS over its WebSocket API for real stream/record state and the

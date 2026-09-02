@@ -52,6 +52,8 @@ CONFIG_DEFAULTS = {
     "alerts": {},
     # Shoutouts (!so + auto raid shoutout, clip card overlay) — see shoutout.py.
     "shoutout": {},
+    # Stream Health Monitor thresholds + alerting — see health.py.
+    "health": {},
 }
 
 
@@ -72,7 +74,7 @@ def _load_config():
                      ("wheels", dict), ("redeems", dict), ("cooldowns", dict),
                      ("automation", dict), ("eventsub", dict),
                      ("commands", dict), ("timers", dict), ("spotify", dict),
-                     ("alerts", dict), ("shoutout", dict)]:
+                     ("alerts", dict), ("shoutout", dict), ("health", dict)]:
         if not isinstance(config.get(key), typ):
             print(f"[config] {key} must be {typ}, got {type(config.get(key)).__name__}, using default {CONFIG_DEFAULTS[key]}")
             config[key] = CONFIG_DEFAULTS[key]

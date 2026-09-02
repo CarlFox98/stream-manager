@@ -56,6 +56,7 @@ function showTab(name) {
   if (name === 'config') loadConfig();
   if (name === 'timers') loadTimers();
   if (name === 'quotes') loadQuotes();
+  if (name === 'health') pollMonitor();
 }
 let lastState = null, lastIx = null;
 $('#tabs').addEventListener('click', e => {
@@ -594,12 +595,148 @@ document.addEventListener('click', e => {
   const act = t.closest('[data-act]'); if (!act) return;
   ({ 'update-install': installUpdate, 'ix-auth': ixAuth, 'ix-logout': ixLogout, 'ix-reload': ixReload,
      'cc-add': saveCustom, 'tm-add': addTimerRow, 'tm-save': saveTimers, 'q-add': addQuote,
-     'sp-auth': spAuth, 'sp-logout': spLogout }[act.dataset.act] || (() => {}))();
+     'sp-auth': spAuth, 'sp-logout': spLogout,
+     'preflight': runPreflight, 'hm-mute': hmToggleMute }[act.dataset.act] || (() => {}))();
 });
 document.addEventListener('change', e => {
   const bt = e.target.closest('[data-cmd-toggle]'); if (bt) return toggleCommand(bt.dataset.cmdToggle, e.target.checked);
   const ct = e.target.closest('[data-cc-toggle]'); if (ct) return toggleCustom(ct.dataset.ccToggle, e.target.checked);
 });
+
+
+// ── Stream Health Monitor ───────────────────────────────────────────
+let hmSeen = new Set();        // alert ids we've already toasted
+let hmMuted = false;           // audible alerts off?
+try { hmMuted = localStorage.getItem('sm_hm_mute') === '1'; } catch (e) {}
+let hmAudio = null, hmLastBeep = 0;
+
+function hmBeep() {
+  if (hmMuted) return;
+  const now = Date.now();
+  if (now - hmLastBeep < 20000) return;   // never more than one beep / 20s
+  hmLastBeep = now;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    hmAudio = hmAudio || new AC();
+    if (hmAudio.state === 'suspended') hmAudio.resume();
+    [0, 0.22].forEach(off => {
+      const o = hmAudio.createOscillator(), g = hmAudio.createGain();
+      const t = hmAudio.currentTime + off;
+      o.type = 'sine'; o.frequency.setValueAtTime(880, t);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.16, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+      o.connect(g); g.connect(hmAudio.destination); o.start(t); o.stop(t + 0.2);
+    });
+  } catch (e) {}
+}
+
+const HM_METRICS = [
+  ['dropped_pct',  'Dropped (net)', '%',    v => v.toFixed(1), 'dropped'],
+  ['congestion',   'Congestion',    '',     v => v.toFixed(2), 'congestion'],
+  ['bitrate_kbps', 'Bitrate',       'kbps', v => fmtNum(Math.round(v)), null],
+  ['fps',          'FPS',           '',     v => v.toFixed(0), null],
+  ['render_pct',   'Render lag',    '%',    v => v.toFixed(1), 'render'],
+  ['encode_pct',   'Encode lag',    '%',    v => v.toFixed(1), 'encode'],
+  ['render_ms',    'Frame time',    'ms',   v => v.toFixed(1), null],
+  ['cpu',          'CPU',           '%',    v => v.toFixed(0), 'cpu'],
+  ['ram_pct',      'Memory',        '%',    v => v.toFixed(0), 'ram'],
+  ['disk_mb',      'Free disk',     'GB',   v => (v / 1024).toFixed(1), 'disk'],
+];
+
+function renderMonitor(d) {
+  const alerts = d.alerts || [], checks = d.checks || [], m = d.metrics || {};
+  const worst = alerts.some(a => a.level === 'bad') ? 'bad'
+              : (alerts.length ? 'warn' : 'ok');
+
+  // banner
+  const b = $('#health-banner');
+  if (b) {
+    if (alerts.length) {
+      const bad = alerts.filter(a => a.level === 'bad');
+      const show = bad.length ? bad : alerts;
+      const extra = alerts.length > show.length ? ` (+${alerts.length - show.length} more)` : '';
+      b.textContent = (worst === 'bad' ? '⚠ ' : '● ') +
+        show.map(a => a.message).join(' · ') + extra;
+      b.className = 'health-banner show' + (worst === 'bad' ? '' : ' warn');
+    } else { b.className = 'health-banner'; b.textContent = ''; }
+  }
+
+  // toast + beep on newly raised alerts
+  const ids = new Set(alerts.map(a => a.id));
+  alerts.forEach(a => {
+    if (hmSeen.has(a.id)) return;
+    toast((a.level === 'bad' ? '⚠ ' : '') + a.message, a.level === 'bad' ? 'err' : '');
+    if (a.level === 'bad') hmBeep();
+  });
+  hmSeen.forEach(id => { if (!ids.has(id)) toast('Recovered: ' + id, 'ok'); });
+  hmSeen = ids;
+
+  if (!$('#tab-health')?.classList.contains('active')) return;   // panel hidden
+
+  const sub = $('#hm-sub');
+  if (sub) {
+    if (!m.obs_ws) sub.textContent = 'OBS WebSocket not reachable — enable it in OBS → Tools → WebSocket Server Settings.';
+    else if (m.live) sub.textContent = `Live · ${fmtUptime(m.duration_sec || 0)} · monitoring every few seconds`;
+    else sub.textContent = 'OBS connected · not streaming — stream metrics appear when you go live.';
+  }
+
+  const lv = {};
+  checks.forEach(c => { lv[c.id] = c.status; });
+  const grid = $('#hm-metrics');
+  if (grid) {
+    grid.innerHTML = HM_METRICS.filter(([k]) => m[k] !== undefined && m[k] !== null)
+      .map(([k, label, unit, fmt, cid]) => {
+        const cls = cid && lv[cid] ? lv[cid] : '';
+        return `<div class="metric ${cls}"><div class="m-label">${esc(label)}</div>` +
+               `<div class="m-val">${esc(fmt(Number(m[k])))}` +
+               (unit ? `<span class="unit">${esc(unit)}</span>` : '') + `</div></div>`;
+      }).join('') || '<div class="stat-label">No metrics yet — waiting for the first sample.</div>';
+  }
+
+  const list = $('#hm-checks');
+  if (list) {
+    list.innerHTML = checks.length ? checks.map(c =>
+      `<div class="chk-row ${c.status === 'ok' ? '' : c.status}">` +
+      `<span class="status-dot ${c.status === 'ok' ? 'on' : (c.status === 'warn' ? 'warn' : 'off')}"></span>` +
+      `<span class="chk-label">${esc(c.label)}</span>` +
+      `<span class="chk-msg">${esc(c.message)}</span></div>`).join('')
+      : '<div class="stat-label">No checks yet.</div>';
+  }
+}
+
+async function pollMonitor() {
+  try { renderMonitor(await api('/api/health/monitor')); } catch (e) {}
+}
+
+async function runPreflight() {
+  const sum = $('#pf-summary'), list = $('#pf-list');
+  if (sum) sum.textContent = 'Checking…';
+  if (list) list.innerHTML = '';
+  let d;
+  try { d = await api('/api/health/preflight'); }
+  catch (e) { if (sum) { sum.textContent = 'Preflight failed — ' + e.message; sum.style.color = 'var(--err)'; } return; }
+  if (sum) {
+    sum.textContent = d.summary || '';
+    sum.style.color = !d.ready ? 'var(--err)' : (d.warnings ? 'var(--warn)' : 'var(--ok)');
+  }
+  if (list) {
+    list.innerHTML = (d.items || []).map(i =>
+      `<div class="chk-row ${i.status === 'ok' ? '' : i.status}">` +
+      `<span class="status-dot ${i.status === 'ok' ? 'on' : (i.status === 'warn' ? 'warn' : 'off')}"></span>` +
+      `<span class="chk-label">${esc(i.label)}</span>` +
+      `<span class="chk-msg">${esc(i.message)}</span></div>`).join('');
+  }
+  toast(d.ready ? 'Preflight passed — ready to stream' : 'Preflight found blockers',
+        d.ready ? 'ok' : 'err');
+}
+
+function hmToggleMute() {
+  hmMuted = !hmMuted;
+  try { localStorage.setItem('sm_hm_mute', hmMuted ? '1' : '0'); } catch (e) {}
+  const btn = $('#hm-mute'); if (btn) btn.textContent = hmMuted ? 'Unmute alerts' : 'Mute alerts';
+  toast(hmMuted ? 'Audible health alerts muted' : 'Audible health alerts on');
+}
 
 // ── poll loops ──────────────────────────────────────────────────────
 async function pollStatus() { try { renderStatus(await api('/api/status')); } catch (e) { setOnline(false); } }
@@ -609,6 +746,7 @@ setInterval(pollStatus, 2000); pollStatus();
 setInterval(pollScenes, 4000); pollScenes();
 setInterval(renderInteractive, 3000); renderInteractive();
 setInterval(renderStats, 5000); renderStats();
+setInterval(pollMonitor, 3000); pollMonitor();
 checkUpdate(); setInterval(checkUpdate, 3600000);
 loadSpotify(); setInterval(loadSpotify, 5000);
 scalePreview(); setTimeout(scalePreview, 300);

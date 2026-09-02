@@ -2,7 +2,7 @@
 import argparse, os, sys, threading, webbrowser
 
 from . import __version__
-from . import obs, system, twitch, updater
+from . import obs, system, twitch, updater, health
 from . import chat, redeems, twitch_auth, eventsub, cooldowns, games, stats, timers, spotify, shoutout
 from .config import config, TWITCH_USER, TWITCH_CLIENT_ID, DASHBOARD_PASSWORD
 from .console import style, icon, grad
@@ -66,6 +66,7 @@ def main():
     if args.lan:
         config["lan"] = True
     setup_file_logging(config["log_file"])
+    health.start()          # Stream Health Monitor (runs whether or not you're live)
     bind_host = "0.0.0.0" if config["lan"] else "127.0.0.1"
     server, PORT = try_bind_port(config["port"], bind_host)
     state["server"]["port"] = PORT

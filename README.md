@@ -4,13 +4,14 @@ A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system stat
 
 ## Features
 
-- **Control-center dashboard** — a tabbed UI (Overview · Interactive · Commands · Timers · Quotes · Config · Log) at `http://localhost:5000/dashboard`, with live OBS/Twitch/system status, a health strip, toasts, and a connection banner
+- **Control-center dashboard** — a tabbed UI (Overview · Health · Interactive · Commands · Timers · Quotes · Config · Log) at `http://localhost:5000/dashboard`, with live OBS/Twitch/system status, a health strip, toasts, and a connection banner
 - **Command Manager** — toggle any built-in command on/off (hand one to another bot) and create custom `!name → response` commands, right from the dashboard
 - **Visual config editor** — edit cooldowns, redeems, wheels, automation, EventSub, and alerts live (saved to `config.json`, validated) — no hand-editing JSON
 - **Real OBS status** via OBS's built-in WebSocket API, falling back to cross-platform process detection (psutil) if it's not configured
 - **Twitch status** — live/offline, title, game, viewer count, via the Twitch Helix API
 - **Overlay scene sets** — switch your whole overlay theme from the dashboard; OBS Browser Sources point at stable URLs
 - **Interactive games & redeems** — coin flip, 50/50, slots, dice, 8-ball, duel, and weighted **Lucky** / **Risky** wheels via chat commands *and* channel-point redeems, with PRISM overlays (with sound). Plus a **quote system**, **timed messages**, **first-chatter & new-follower alerts**, raid/bits/sub hype via EventSub, opt-in automated outcomes, a leaderboard, and cooldowns. See **[INTERACTIVE.md](INTERACTIVE.md)**
+- **Stream Health Monitor** — watches dropped frames, congestion, render/encode lag, bitrate, CPU/RAM, free disk, chat/EventSub/auth and overlay heartbeats; raises a banner + toast + beep (and optionally a chat notice) the moment something goes wrong, logs every incident to `data/health-log.jsonl`, and offers a one-click **preflight** check before you go live
 - **Real-time** — overlays get effects instantly (long-poll) and the dashboard streams live events (SSE)
 - **Spotify now-playing** — one-click connect, a `!song` command, and a dashboard widget (optional)
 - **One-click Twitch login** — a browser window opens for you to approve; no codes to copy

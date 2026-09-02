@@ -96,6 +96,27 @@ def wait_global(after_id, timeout=25.0):
             _cond.wait(remaining)
 
 
+# channel -> unix ts of the last poll by an overlay (its heartbeat)
+_last_poll = {}
+
+
+def note_poll(channel):
+    """Record that an overlay asked for this channel — its liveness heartbeat."""
+    _last_poll[channel] = time.time()
+
+
+def subscribers(max_age=90.0):
+    """{channel: seconds_since_last_poll} for overlays seen within `max_age`."""
+    now = time.time()
+    return {ch: round(now - ts, 1) for ch, ts in _last_poll.items() if now - ts <= max_age}
+
+
+def last_poll(channel):
+    """Seconds since an overlay last polled this channel, or None if never."""
+    ts = _last_poll.get(channel)
+    return None if ts is None else round(time.time() - ts, 1)
+
+
 def current_id():
     with _lock:
         return _seq

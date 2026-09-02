@@ -457,3 +457,113 @@ def test_config_deep_merge_and_save(tmp_path, monkeypatch):
     import json
     on_disk = json.load(open(str(tmp_path / "config.json"), encoding="utf-8"))
     assert on_disk["cooldowns"]["coinflip"]["user"] == 99
+
+
+# ── Phase 6: Stream Health Monitor ─────────────────────────────────────────
+def test_health_level_thresholds():
+    from stream_manager import health
+    assert health._level(0.2, 1.0, 3.0) == "ok"
+    assert health._level(1.5, 1.0, 3.0) == "warn"
+    assert health._level(9.0, 1.0, 3.0) == "bad"
+    # lower-is-worse (free disk space)
+    assert health._level(50000, 10000, 2000, higher_is_worse=False) == "ok"
+    assert health._level(5000, 10000, 2000, higher_is_worse=False) == "warn"
+    assert health._level(500, 10000, 2000, higher_is_worse=False) == "bad"
+
+
+def test_health_cfg_falls_back_to_defaults(monkeypatch):
+    from stream_manager import health
+    monkeypatch.setitem(cfg.config, "health", {"dropped_bad": 12.5})
+    assert health.cfg("dropped_bad") == 12.5
+    assert health.cfg("dropped_warn") == health.DEFAULTS["dropped_warn"]
+    monkeypatch.setitem(cfg.config, "health", "not-a-dict")
+    assert health.cfg("poll_sec") == health.DEFAULTS["poll_sec"]
+
+
+def test_health_dropped_frames_raise_and_clear(monkeypatch, tmp_path):
+    """Two OBS samples with 10% dropped frames must raise a 'bad' alert, and a
+    run of healthy samples must clear it (hysteresis)."""
+    from stream_manager import health
+    monkeypatch.setattr(health, "LOG_FILE", str(tmp_path / "health-log.jsonl"))
+    monkeypatch.setitem(cfg.config, "health", {"chat_alert": False, "clear_after": 2})
+    health._prev = None
+    health._alerts.clear()
+
+    state = {"skipped": 0.0, "total": 0.0}
+
+    def fake_fetch():
+        return {"ok": True,
+                "stats": {"activeFps": 60, "averageFrameRenderTime": 3.0,
+                          "renderSkippedFrames": 0, "renderTotalFrames": state["total"],
+                          "outputSkippedFrames": 0, "outputTotalFrames": state["total"],
+                          "availableDiskSpace": 500000},
+                "stream": {"outputActive": True, "outputCongestion": 0.05,
+                           "outputSkippedFrames": state["skipped"],
+                           "outputTotalFrames": state["total"],
+                           "outputBytes": 0, "outputDuration": 60000}}
+
+    monkeypatch.setattr(health.obs_ws, "fetch_stats", fake_fetch)
+    monkeypatch.setattr(health, "_system_checks", lambda c, m: None)
+    monkeypatch.setattr(health, "_integration_checks", lambda c, m: None)
+    monkeypatch.setattr(health, "_overlay_checks", lambda c, m: None)
+
+    health.sample()                                  # baseline, no rate yet
+    state["total"] += 1000; state["skipped"] += 100  # 10% dropped this interval
+    snap = health.sample()
+    assert snap["metrics"]["dropped_pct"] == 10.0
+    assert snap["status"] == "bad"
+    assert any(a["id"] == "dropped" for a in snap["alerts"])
+
+    for _ in range(3):                               # healthy again
+        state["total"] += 1000
+        snap = health.sample()
+    assert snap["metrics"]["dropped_pct"] == 0.0
+    assert not any(a["id"] == "dropped" for a in snap["alerts"])
+    health._prev = None
+    health._alerts.clear()
+
+
+def test_health_preflight_skips_live_only_checks(monkeypatch):
+    from stream_manager import health
+    monkeypatch.setattr(health, "sample", lambda: {
+        "checks": [{"id": "dropped", "label": "Dropped frames (network)",
+                    "status": "bad", "message": "10%"},
+                   {"id": "auth", "label": "Twitch auth", "status": "ok",
+                    "message": "authorized"},
+                   {"id": "obs", "label": "OBS", "status": "ok", "message": "running"}],
+        "metrics": {"obs_ws": True}})
+    pf = health.preflight()
+    labels = [i["label"] for i in pf["items"]]
+    assert "Dropped frames (network)" not in labels    # live-only, not a blocker
+    assert "Twitch auth" in labels and "OBS WebSocket" in labels
+    assert pf["ready"] is True
+
+
+def test_health_preflight_blocks_when_obs_is_closed(monkeypatch):
+    """OBS being closed is only a warning while idling, but a hard blocker
+    for preflight — you cannot go live without it."""
+    from stream_manager import health
+    monkeypatch.setattr(health, "sample", lambda: {
+        "checks": [{"id": "obs", "label": "OBS", "status": "warn",
+                    "message": "not detected"}],
+        "metrics": {"obs_ws": False}})
+    pf = health.preflight()
+    assert pf["ready"] is False
+    assert "blocker" in pf["summary"]
+    assert next(i for i in pf["items"] if i["label"] == "OBS")["status"] == "bad"
+
+
+def test_validate_health_section():
+    from stream_manager import server
+    assert server.validate_section("health", {"dropped_bad": 4, "chat_alert": True})[0] is True
+    assert server.validate_section("health", {"chat_template": 5})[0] is False
+    assert server.validate_section("health", {"cpu_warn": -1})[0] is False
+    assert server.validate_section("health", {"poll_sec": 1})[0] is False
+
+
+def test_effects_heartbeat_tracking(monkeypatch):
+    from stream_manager import effects
+    effects.note_poll("shoutout")
+    assert effects.last_poll("shoutout") is not None
+    assert "shoutout" in effects.subscribers(max_age=60)
+    assert "nope" not in effects.subscribers(max_age=60)
