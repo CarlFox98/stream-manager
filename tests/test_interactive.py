@@ -586,8 +586,29 @@ def test_effects_heartbeat_tracking(monkeypatch):
 
 
 # ── v0.10.0: bitrate collapse, audio checks, session transitions ───────────
+class _Clock:
+    """A controlled clock. health measures bitrate over the real interval between
+    polls, so calling sample() twice back-to-back makes dt ~0.1ms and inflates
+    every rate by ~10000x. The assertions still passed (the ratios hold) while the
+    numbers were nonsense - 50000 kbps of 6000000 - which means the test could not
+    have caught a units error. Pinning the clock makes the figures physical."""
+
+    def __init__(self, t=1_000_000.0):
+        self.t = t
+
+    def __call__(self):
+        return self.t
+
+    def tick(self, seconds):
+        self.t += seconds
+
+
 def _obs_sample(live=True, kbps=6000, muted=False, device="{hyperx}", secs=1):
-    """Build the two-sample pair the rate/bitrate maths needs."""
+    """Build the two-sample pair the rate/bitrate maths needs.
+
+    `kbps` is cumulative: outputBytes is the total bytes sent, so a caller raises
+    it by the per-interval rate between samples.
+    """
     bytes_ = kbps * 1000 / 8 * secs
     return {"ok": True, "error": "",
             "stats": {"activeFps": 60, "averageFrameRenderTime": 3.0,
@@ -616,20 +637,29 @@ def test_bitrate_collapse_is_caught_when_drops_are_zero(monkeypatch, tmp_path):
     monkeypatch.setattr(health, "_integration_checks", lambda c, m: None)
     monkeypatch.setattr(health, "_overlay_checks", lambda c, m: None)
 
-    rate = {"kbps": 6000}
+    clock = _Clock()
+    monkeypatch.setattr(health.time, "time", clock)
+    sent = {"kbps": 0}                    # cumulative kilobits sent
     monkeypatch.setattr(health.obs_ws, "fetch_stats",
-                        lambda mic_input="Mic/Aux": _obs_sample(kbps=rate["kbps"]))
-    health.sample()                       # baseline
-    rate["kbps"] = 12000                  # +6000 kbps over the interval
-    snap = health.sample()
-    assert snap["metrics"]["bitrate_kbps"] > 5000
+                        lambda mic_input="Mic/Aux": _obs_sample(kbps=sent["kbps"]))
+
+    def poll(interval_kbps, seconds=5.0):
+        sent["kbps"] += interval_kbps * seconds   # bytes accrued this interval
+        clock.tick(seconds)
+        return health.sample()
+
+    poll(0)                               # baseline, no rate yet
+    snap = poll(6000)                     # a healthy 6000 kbps interval
+    assert snap["metrics"]["bitrate_kbps"] == 6000, snap["metrics"]
+    assert snap["metrics"]["target_kbps"] == 6000
     assert not any(c["id"] == "bitrate" and c["status"] != "ok" for c in snap["checks"])
 
-    rate["kbps"] = 12050                  # only 50 kbps this interval
-    snap = health.sample()
+    snap = poll(50)                       # the 2026-09-02 collapse: 50 kbps
+    assert snap["metrics"]["bitrate_kbps"] == 50
     bit = next(c for c in snap["checks"] if c["id"] == "bitrate")
     assert bit["status"] == "bad"
-    assert "upload can't sustain" in bit["message"]
+    assert bit["message"] == ("only 50 kbps of 6000 — upload can't sustain your "
+                              "bitrate, so OBS is shipping a lower-quality picture")
     # ...and crucially, dropped frames never left 0%
     dropped = next(c for c in snap["checks"] if c["id"] == "dropped")
     assert dropped["status"] == "ok"
@@ -704,14 +734,20 @@ def test_bitrate_target_ignores_catchup_bursts(monkeypatch, tmp_path):
     monkeypatch.setattr(health, "_system_checks", lambda c, m: None)
     monkeypatch.setattr(health, "_integration_checks", lambda c, m: None)
     monkeypatch.setattr(health, "_overlay_checks", lambda c, m: None)
-    rate = {"kbps": 6000}
+    clock = _Clock()
+    monkeypatch.setattr(health.time, "time", clock)
+    sent = {"kbps": 0}
     monkeypatch.setattr(health.obs_ws, "fetch_stats",
-                        lambda mic_input="Mic/Aux": _obs_sample(kbps=rate["kbps"]))
-    health.sample()
-    rate["kbps"] = 12000            # a normal 6000 kbps interval
-    health.sample()
-    peak_before = health._peak_kbps
-    rate["kbps"] = 42000            # 30000 kbps "interval" — a catch-up burst
-    health.sample()
-    assert health._peak_kbps == peak_before, "burst must not raise the learned target"
+                        lambda mic_input="Mic/Aux": _obs_sample(kbps=sent["kbps"]))
+
+    def poll(interval_kbps, seconds=5.0):
+        sent["kbps"] += interval_kbps * seconds
+        clock.tick(seconds)
+        return health.sample()
+
+    poll(0)
+    poll(6000)                      # a normal 6000 kbps interval
+    assert health._peak_kbps == 6000
+    poll(30000)                     # a catch-up burst after a stall
+    assert health._peak_kbps == 6000, "burst must not raise the learned target"
     health._prev = None; health._alerts.clear(); health.reset_stream_baselines()
