@@ -1,0 +1,27 @@
+# Normalize line endings so Windows checkouts stop warning on every commit.
+# Without this, git's autocrlf=true printed "LF will be replaced by CRLF" for
+# every text file in the repo on each publish (60+ lines of noise), and left the
+# door open to a whole-file diff if endings ever flipped.
+* text=auto eol=lf
+
+# Windows-native launchers genuinely need CRLF.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binary — never convert, never diff as text.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.mp3  binary
+*.ogg  binary
+*.wav  binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
+*.otf  binary
+*.zip  binary
+*.exe  binary
