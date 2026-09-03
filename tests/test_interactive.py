@@ -3,6 +3,7 @@ stats, persistence). No network or live Twitch required.
 
 Run from the repo root:   python -m pytest -q
 """
+import os
 import random
 import pytest
 
@@ -751,3 +752,86 @@ def test_bitrate_target_ignores_catchup_bursts(monkeypatch, tmp_path):
     poll(30000)                     # a catch-up burst after a stall
     assert health._peak_kbps == 6000, "burst must not raise the learned target"
     health._prev = None; health._alerts.clear(); health.reset_stream_baselines()
+
+
+# ── logging: concurrency and rotation ──────────────────────────────────────
+def test_concurrent_log_writes_are_never_torn(tmp_path, monkeypatch):
+    """server.log from the 2026-09-02 stream contained eight torn fragments -
+    lines that were just 'l' plus a stray carriage return - because every HTTP
+    handler thread appended with no lock.
+
+    On Linux, O_APPEND plus the GIL makes these small writes atomic by accident,
+    so simply racing threads proves nothing (it passes against the buggy code
+    too). The tearing is a Windows text-mode artifact: the newline translation
+    is a second, separate write. So force the same window everywhere by having
+    each write land in two parts with a yield in between. With the lock the
+    lines still arrive whole; without it they interleave.
+    """
+    import builtins, threading, time
+    from stream_manager import logging_util
+
+    path = str(tmp_path / "server.log")
+    real_open = builtins.open
+
+    class _SplitWriter:
+        """Writes in two parts with a yield between - the Windows behaviour."""
+
+        def __init__(self, fh):
+            self._fh = fh
+
+        def write(self, text):
+            half = max(1, len(text) // 2)
+            self._fh.write(text[:half])
+            self._fh.flush()
+            time.sleep(0)                 # hand the GIL to another thread
+            self._fh.write(text[half:])
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return self._fh.__exit__(*exc)
+
+    def fake_open(file, *a, **kw):
+        fh = real_open(file, *a, **kw)
+        if str(file) == path and "a" in (a[0] if a else kw.get("mode", "r")):
+            return _SplitWriter(fh)
+        return fh
+
+    monkeypatch.setattr(builtins, "open", fake_open)
+
+    threads, per_thread = 16, 60
+
+    def hammer(n):
+        for i in range(per_thread):
+            logging_util.append_line(path, f"[thread {n:02d}] Served: overlay-{i:03d}.html")
+
+    ts = [threading.Thread(target=hammer, args=(n,)) for n in range(threads)]
+    for t in ts: t.start()
+    for t in ts: t.join()
+
+    monkeypatch.undo()
+    with open(path, encoding="utf-8", newline="") as f:
+        raw = f.read()
+    lines = [ln for ln in raw.split("\n") if ln != ""]
+    assert len(lines) == threads * per_thread, f"lost or split lines: {len(lines)}"
+    assert "\r" not in raw, "carriage returns mean the text layer split a write"
+    bad = [ln for ln in lines
+           if not ln.startswith("[thread ") or not ln.endswith(".html")]
+    assert bad == [], f"torn lines: {bad[:5]}"
+
+
+def test_log_rotates_at_the_size_ceiling(tmp_path, monkeypatch):
+    """Rotation used to be checked only at startup, so a long-running instance
+    grew server.log without bound."""
+    from stream_manager import logging_util
+    monkeypatch.setattr(logging_util, "MAX_BYTES", 500)
+    path = str(tmp_path / "server.log")
+    for i in range(60):
+        logging_util.append_line(path, f"line {i:04d} " + "x" * 20)
+    assert os.path.isfile(path + ".old"), "should have rolled to .old"
+    assert os.path.getsize(path) <= logging_util.MAX_BYTES + 200
+    # rolling a second time must not fail on an existing .old (Windows rename)
+    for i in range(60):
+        logging_util.append_line(path, f"line {i:04d} " + "x" * 20)
+    assert os.path.isfile(path + ".old")

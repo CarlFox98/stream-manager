@@ -16,7 +16,7 @@ import datetime, json, os, random, re, threading, time
 import urllib.error, urllib.parse, urllib.request
 from collections import deque
 
-from . import effects
+from . import effects, logging_util
 from .config import BASE_DIR, TWITCH_CLIENT_ID, TWITCH_USER, config
 
 LOG_FILE = os.path.join(BASE_DIR, "data", "shoutout-log.jsonl")
@@ -269,13 +269,10 @@ def _viewers_phrase(n):
 
 
 def _log_history(entry):
-    try:
-        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-        entry["ts"] = time.time()
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except Exception as e:
-        print(f"[shoutout] could not write log: {e}")
+    # Written from the chat thread and the EventSub thread (raid shoutouts).
+    entry["ts"] = time.time()
+    if not logging_util.append_line(LOG_FILE, json.dumps(entry, ensure_ascii=False)):
+        print("[shoutout] could not write clip history")
 
 
 def restore_clip_history():

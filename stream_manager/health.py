@@ -19,7 +19,7 @@ on doesn't mask a healthy stream later (and vice versa).
 """
 import json, os, threading, time
 
-from . import effects, obs_ws
+from . import effects, logging_util, obs_ws
 from .config import BASE_DIR, config
 
 LOG_FILE = os.path.join(BASE_DIR, "data", "health-log.jsonl")
@@ -369,13 +369,11 @@ def _overlay_checks(checks, metrics):
 
 # ── alert state machine ────────────────────────────────────────────────────
 def _log(entry):
-    try:
-        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-        entry["ts"] = time.time()
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except Exception as e:
-        print(f"[health] could not write log: {e}")
+    # Written from the monitor thread and, via preflight() -> sample(), from HTTP
+    # handler threads too. append_line serialises them so lines can't interleave.
+    entry["ts"] = time.time()
+    if not logging_util.append_line(LOG_FILE, json.dumps(entry, ensure_ascii=False)):
+        print("[health] could not write health log")
 
 
 def _update_alerts(checks):
