@@ -21,6 +21,27 @@ _last_notify = {}   # (action, user_lower) -> ts of last "on cooldown" reply
 _NOTIFY_THROTTLE = 5.0
 _FILE = os.path.join(BASE_DIR, "data", "cooldowns.json")
 
+# Cooldown windows are seconds to minutes; anything older is dead weight. Without
+# pruning, _last_user gained a permanent entry per (action, viewer) and save()
+# wrote every one of them, so cooldowns.json grew forever across streams.
+_MAX_AGE = 3600.0
+_PRUNE_EVERY = 300.0
+_last_prune = 0.0
+
+
+def _prune(now):
+    """Drop entries older than _MAX_AGE. Caller must hold _lock."""
+    global _last_prune
+    if now - _last_prune < _PRUNE_EVERY:
+        return
+    _last_prune = now
+    cutoff = now - _MAX_AGE
+    for d in (_last_user, _last_notify):
+        for k in [k for k, ts in d.items() if ts < cutoff]:
+            del d[k]
+    for k in [k for k, ts in _last_global.items() if ts < cutoff]:
+        del _last_global[k]
+
 
 def check(action, user, user_cd=0, global_cd=0):
     """Return (allowed, wait_seconds, scope).
@@ -31,6 +52,7 @@ def check(action, user, user_cd=0, global_cd=0):
     now = time.time()
     ul = (user or "").lower()
     with _lock:
+        _prune(now)
         if global_cd > 0:
             rem = global_cd - (now - _last_global.get(action, 0))
             if rem > 0:
@@ -62,16 +84,18 @@ def reset():
         _last_global.clear()
         _last_user.clear()
         _last_notify.clear()
+        globals()["_last_prune"] = 0.0
 
 
 def save():
     """Persist cooldown windows so they survive a restart."""
     try:
         os.makedirs(os.path.dirname(_FILE), exist_ok=True)
+        cutoff = time.time() - _MAX_AGE
         with _lock:
             data = {
-                "global": dict(_last_global),
-                "user": {f"{a}|{u}": ts for (a, u), ts in _last_user.items()},
+                "global": {a: ts for a, ts in _last_global.items() if ts >= cutoff},
+                "user": {f"{a}|{u}": ts for (a, u), ts in _last_user.items() if ts >= cutoff},
             }
         with open(_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f)
@@ -87,9 +111,11 @@ def load():
         with open(_FILE, encoding="utf-8") as f:
             d = json.load(f)
         with _lock:
-            _last_global.update({k: float(v) for k, v in (d.get("global") or {}).items()})
+            cutoff = time.time() - _MAX_AGE
+            _last_global.update({k: float(v) for k, v in (d.get("global") or {}).items()
+                                 if float(v) >= cutoff})
             for key, ts in (d.get("user") or {}).items():
-                if "|" in key:
+                if "|" in key and float(ts) >= cutoff:
                     a, u = key.split("|", 1)
                     _last_user[(a, u)] = float(ts)
     except Exception as e:

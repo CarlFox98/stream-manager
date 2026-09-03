@@ -40,6 +40,16 @@ DEFAULTS = {
     "ram_warn": 90.0, "ram_bad": 96.0,
     "disk_warn_mb": 10000, "disk_bad_mb": 2000,
     "fps_warn_pct": 90.0,         # % of target fps
+    # Sustained bitrate vs. the encoder's target. Dynamic Bitrate hides network
+    # trouble as a *quality* loss rather than dropped frames, so this is the
+    # check that catches "the stream went to potato" when drops stay at 0%.
+    "bitrate_warn_pct": 80.0,     # warn below this % of target
+    "bitrate_bad_pct": 50.0,      # bad below this % of target
+    "bitrate_grace_sec": 20,      # ignore the ramp-up right after going live
+    "target_bitrate_kbps": 0,     # 0 = learn it from the best rate seen this stream
+    # Audio: catch "I streamed for 20 minutes muted" before chat does.
+    "audio_check": True,
+    "mic_input": "Mic/Aux",       # OBS input name to watch
     "overlay_stale_sec": 90,      # an overlay that polled before but went quiet
     "token_warn_sec": 900,        # warn when the Twitch token expires within this
 }
@@ -84,6 +94,7 @@ def _obs_checks(sample, checks, metrics):
     stats, stream = sample.get("stats") or {}, sample.get("stream") or {}
     live = bool(stream.get("outputActive"))
     metrics["live"] = live
+    _note_live(live)
     metrics["congestion"] = round(float(stream.get("outputCongestion") or 0), 3)
     metrics["fps"] = round(float(stats.get("activeFps") or 0), 1)
     metrics["render_ms"] = round(float(stats.get("averageFrameRenderTime") or 0), 2)
@@ -154,6 +165,140 @@ def _obs_checks(sample, checks, metrics):
                      higher_is_worse=False)
         checks.append(_chk("disk", "Free disk space", lvl,
                            f"{disk_mb/1024:.1f} GB free", int(disk_mb), "MB"))
+
+    if live:
+        _bitrate_check(metrics, checks)
+
+
+# ── stream session transitions ─────────────────────────────────────────────
+_was_live = None
+
+
+def _note_live(live):
+    """Fire once on each offline<->live transition.
+
+    Nothing else in the app knew when a stream actually started, which is why
+    alerts._greeted was never cleared: leaving Stream Manager running across two
+    streams meant first-chat greetings silently stopped working after the first.
+    """
+    global _was_live
+    if live == _was_live:
+        return
+    first = _was_live is None
+    _was_live = live
+    if first:
+        return
+    if live:
+        reset_stream_baselines()
+        try:
+            from . import alerts
+            n = alerts.reset_stream()
+            print(f"[health] stream started — welcome list cleared ({n} viewer(s))")
+        except Exception as e:
+            print(f"[health] stream-start reset failed: {e}")
+        _log({"event": "stream_start"})
+    else:
+        reset_stream_baselines()
+        with _lock:
+            _alerts.clear()
+        _log({"event": "stream_stop"})
+        print("[health] stream stopped")
+
+
+# ── sustained-bitrate check ────────────────────────────────────────────────
+_peak_kbps = 0.0                  # best sustained rate seen this stream
+_live_since = 0.0
+
+
+def _bitrate_check(metrics, checks):
+    """Dynamic Bitrate trades resolution for reliability: when upload collapses,
+    OBS lowers the bitrate instead of dropping frames. Drops stay at 0% and the
+    stream still looks terrible. Comparing the live rate to the target is the
+    only way to see it.
+    """
+    global _peak_kbps, _live_since
+    kbps = metrics.get("bitrate_kbps")
+    if kbps is None:
+        return
+    now = time.time()
+    if not _live_since:
+        _live_since = now
+    target = float(cfg("target_bitrate_kbps") or 0)
+    if target <= 0:
+        # Learn the target: the highest sustained rate this stream has reached.
+        # Guard against catch-up bursts — when a stall clears, OBS flushes its
+        # buffer and one interval can measure far above the real bitrate. Letting
+        # that set the peak would leave every later sample looking "degraded".
+        if kbps > _peak_kbps and (_peak_kbps == 0 or kbps <= _peak_kbps * 1.5):
+            _peak_kbps = float(kbps)
+        target = _peak_kbps
+    metrics["target_kbps"] = int(target)
+    if target < 500 or now - _live_since < float(cfg("bitrate_grace_sec")):
+        return                    # still ramping up — don't cry wolf
+    pct = min((kbps / target) * 100.0, 100.0)
+    metrics["bitrate_pct"] = round(pct, 1)
+    lvl = _level(pct, float(cfg("bitrate_warn_pct")), float(cfg("bitrate_bad_pct")),
+                 higher_is_worse=False)
+    if lvl == "ok":
+        msg = f"{int(kbps)} kbps ({pct:.0f}% of target)"
+    else:
+        msg = (f"only {int(kbps)} kbps of {int(target)} — upload can't sustain your "
+               f"bitrate, so OBS is shipping a lower-quality picture")
+    checks.append(_chk("bitrate", "Sustained bitrate", lvl, msg, int(kbps), "kbps"))
+
+
+def reset_stream_baselines():
+    """Forget per-stream learned values (called when the stream goes offline)."""
+    global _peak_kbps, _live_since
+    _peak_kbps = 0.0
+    _live_since = 0.0
+
+
+_last_mic_device = None
+
+
+def _audio_checks(sample, checks, metrics):
+    """Muted mic and mid-stream device swaps — the two silent stream-killers.
+
+    The OBS log from 2026-09-02 shows Mic/Aux bound to the Windows *default*
+    device, so it flipped between the HyperX Quadcast, an Oculus virtual device
+    and an Insta360 receiver as headsets came and went. Every flip re-initialises
+    the source, which viewers hear as a dropout.
+    """
+    global _last_mic_device
+    if not cfg("audio_check"):
+        return
+    audio = sample.get("audio") or {}
+    if not audio.get("inputs"):
+        return
+    live = bool(metrics.get("live"))
+    mic = audio.get("mic") or {}
+    mic_name = str(cfg("mic_input") or "Mic/Aux")
+
+    if mic:
+        muted = bool(mic.get("muted"))
+        metrics["mic_muted"] = muted
+        checks.append(_chk("mic", "Microphone", "bad" if (muted and live) else ("warn" if muted else "ok"),
+                           f"{mic_name} is MUTED" if muted else f"{mic_name} is live"))
+        device = mic.get("device") or ""
+        metrics["mic_device"] = device
+        if device == "default":
+            checks.append(_chk("mic_device", "Mic device binding", "warn",
+                               f"{mic_name} follows the Windows default device — it will "
+                               f"switch mid-stream when a headset connects"))
+        elif _last_mic_device is not None and device and device != _last_mic_device:
+            checks.append(_chk("mic_device", "Mic device binding", "warn",
+                               f"{mic_name} changed device mid-stream"))
+        if device:
+            _last_mic_device = device
+    else:
+        checks.append(_chk("mic", "Microphone", "warn",
+                           f"no OBS input named '{mic_name}' — set health.mic_input"))
+
+    others = [n for n in audio.get("muted_inputs", []) if n != mic_name]
+    if others:
+        checks.append(_chk("audio_muted", "Muted audio sources", "warn" if live else "ok",
+                           ", ".join(others) + " muted"))
 
 
 def _system_checks(checks, metrics):
@@ -266,10 +411,12 @@ def _update_alerts(checks):
 def sample():
     """Take one reading. Returns the snapshot dict."""
     checks, metrics = [], {}
-    obs_sample = obs_ws.fetch_stats()
+    obs_sample = obs_ws.fetch_stats(str(cfg("mic_input") or "Mic/Aux"))
     metrics["obs_ws"] = bool(obs_sample.get("ok"))
+    metrics["obs_ws_error"] = obs_sample.get("error") or ""
     if obs_sample.get("ok"):
         _obs_checks(obs_sample, checks, metrics)
+        _audio_checks(obs_sample, checks, metrics)
     _system_checks(checks, metrics)
     _integration_checks(checks, metrics)
     _overlay_checks(checks, metrics)
@@ -296,13 +443,14 @@ def preflight():
     snap = sample()
     items = []
     for c in snap["checks"]:
-        if c["id"] in ("dropped", "congestion", "reconnecting", "render", "encode"):
+        if c["id"] in ("dropped", "congestion", "reconnecting", "render", "encode", "bitrate"):
             continue                      # only meaningful once you're live
         items.append({"label": c["label"], "status": c["status"], "message": c["message"]})
     m = snap.get("metrics", {})
     if not m.get("obs_ws"):
         items.append({"label": "OBS WebSocket", "status": "warn",
-                      "message": "not reachable — health metrics will be limited"})
+                      "message": m.get("obs_ws_error")
+                                 or "not reachable — health metrics will be limited"})
     else:
         items.append({"label": "OBS WebSocket", "status": "ok", "message": "connected"})
 

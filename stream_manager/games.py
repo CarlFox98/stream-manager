@@ -93,6 +93,9 @@ def _pick_weighted(segments, candidates=None):
 # "severe": true in config, e.g. the timeout) so one person can't be hit by the
 # harsh outcome repeatedly.
 _spin_history = {}         # (kind, user_lower) -> {"last_index", "last_severe_ts"}
+# Anti-spam windows are per-stream at most; keeping a row per viewer forever
+# made spin-history.json grow without bound.
+_SPIN_MAX_AGE = 7 * 24 * 3600.0
 _spin_lock = threading.Lock()
 
 
@@ -100,8 +103,10 @@ def save_spin_history():
     """Persist per-viewer spin history so anti-spam windows survive a restart."""
     try:
         os.makedirs(os.path.dirname(_SPIN_FILE), exist_ok=True)
+        cutoff = time.time() - _SPIN_MAX_AGE
         with _spin_lock:
-            data = {f"{k}|{u}": v for (k, u), v in _spin_history.items()}
+            data = {f"{k}|{u}": v for (k, u), v in _spin_history.items()
+                    if float(v.get("last_severe_ts") or 0) >= cutoff}
         with open(_SPIN_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f)
     except Exception as e:
@@ -114,9 +119,12 @@ def load_spin_history():
     try:
         with open(_SPIN_FILE, encoding="utf-8") as f:
             d = json.load(f)
+        cutoff = time.time() - _SPIN_MAX_AGE
         with _spin_lock:
             for key, val in d.items():
                 if "|" in key and isinstance(val, dict):
+                    if float(val.get("last_severe_ts") or 0) < cutoff:
+                        continue
                     kind, u = key.split("|", 1)
                     _spin_history[(kind, u)] = val
     except Exception as e:

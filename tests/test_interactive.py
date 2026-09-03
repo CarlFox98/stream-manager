@@ -94,11 +94,27 @@ def test_mods_bypass(monkeypatch):
 
 
 def test_cooldown_persist():
-    cooldowns._last_global["coinflip"] = 100.0
-    cooldowns._last_user[("coinflip", "x")] = 50.0
+    import time as _t
+    now = _t.time()
+    cooldowns._last_global["coinflip"] = now
+    cooldowns._last_user[("coinflip", "x")] = now - 5
     cooldowns.save(); cooldowns.reset(); cooldowns.load()
-    assert cooldowns._last_global.get("coinflip") == 100.0
-    assert cooldowns._last_user.get(("coinflip", "x")) == 50.0
+    assert cooldowns._last_global.get("coinflip") == now
+    assert cooldowns._last_user.get(("coinflip", "x")) == now - 5
+
+
+def test_cooldown_prunes_stale_entries():
+    """Entries older than _MAX_AGE must not be persisted or reloaded — otherwise
+    cooldowns.json gains a permanent row per (action, viewer), forever."""
+    import time as _t
+    cooldowns.reset()
+    now = _t.time()
+    cooldowns._last_user[("coinflip", "fresh")] = now - 10
+    cooldowns._last_user[("coinflip", "ancient")] = now - cooldowns._MAX_AGE - 60
+    cooldowns.save(); cooldowns.reset(); cooldowns.load()
+    assert ("coinflip", "fresh") in cooldowns._last_user
+    assert ("coinflip", "ancient") not in cooldowns._last_user
+    cooldowns.reset()
 
 
 # ── quotes ───────────────────────────────────────────────────────────────────
@@ -491,7 +507,7 @@ def test_health_dropped_frames_raise_and_clear(monkeypatch, tmp_path):
 
     state = {"skipped": 0.0, "total": 0.0}
 
-    def fake_fetch():
+    def fake_fetch(mic_input="Mic/Aux"):
         return {"ok": True,
                 "stats": {"activeFps": 60, "averageFrameRenderTime": 3.0,
                           "renderSkippedFrames": 0, "renderTotalFrames": state["total"],
@@ -567,3 +583,135 @@ def test_effects_heartbeat_tracking(monkeypatch):
     assert effects.last_poll("shoutout") is not None
     assert "shoutout" in effects.subscribers(max_age=60)
     assert "nope" not in effects.subscribers(max_age=60)
+
+
+# ── v0.10.0: bitrate collapse, audio checks, session transitions ───────────
+def _obs_sample(live=True, kbps=6000, muted=False, device="{hyperx}", secs=1):
+    """Build the two-sample pair the rate/bitrate maths needs."""
+    bytes_ = kbps * 1000 / 8 * secs
+    return {"ok": True, "error": "",
+            "stats": {"activeFps": 60, "averageFrameRenderTime": 3.0,
+                      "renderSkippedFrames": 0, "renderTotalFrames": 60,
+                      "outputSkippedFrames": 0, "outputTotalFrames": 60,
+                      "availableDiskSpace": 500000},
+            "stream": {"outputActive": live, "outputCongestion": 0.02,
+                       "outputSkippedFrames": 0, "outputTotalFrames": 60,
+                       "outputBytes": bytes_, "outputDuration": 600000},
+            "audio": {"mic": {"name": "Mic/Aux", "muted": muted, "device": device},
+                      "muted_inputs": (["Mic/Aux"] if muted else []),
+                      "inputs": ["Mic/Aux", "Desktop Audio"]}}
+
+
+def test_bitrate_collapse_is_caught_when_drops_are_zero(monkeypatch, tmp_path):
+    """The 2026-09-02 failure mode: Dynamic Bitrate absorbs a bad uplink, so
+    dropped frames stay at 0.0% while the picture quietly turns to mush.
+    Comparing sustained bitrate against the learned target is what catches it."""
+    from stream_manager import health
+    monkeypatch.setattr(health, "LOG_FILE", str(tmp_path / "h.jsonl"))
+    monkeypatch.setitem(cfg.config, "health", {"chat_alert": False, "bitrate_grace_sec": 0,
+                                               "audio_check": False})
+    health._prev = None; health._alerts.clear(); health._was_live = None
+    health.reset_stream_baselines()
+    monkeypatch.setattr(health, "_system_checks", lambda c, m: None)
+    monkeypatch.setattr(health, "_integration_checks", lambda c, m: None)
+    monkeypatch.setattr(health, "_overlay_checks", lambda c, m: None)
+
+    rate = {"kbps": 6000}
+    monkeypatch.setattr(health.obs_ws, "fetch_stats",
+                        lambda mic_input="Mic/Aux": _obs_sample(kbps=rate["kbps"]))
+    health.sample()                       # baseline
+    rate["kbps"] = 12000                  # +6000 kbps over the interval
+    snap = health.sample()
+    assert snap["metrics"]["bitrate_kbps"] > 5000
+    assert not any(c["id"] == "bitrate" and c["status"] != "ok" for c in snap["checks"])
+
+    rate["kbps"] = 12050                  # only 50 kbps this interval
+    snap = health.sample()
+    bit = next(c for c in snap["checks"] if c["id"] == "bitrate")
+    assert bit["status"] == "bad"
+    assert "upload can't sustain" in bit["message"]
+    # ...and crucially, dropped frames never left 0%
+    dropped = next(c for c in snap["checks"] if c["id"] == "dropped")
+    assert dropped["status"] == "ok"
+    health._prev = None; health._alerts.clear(); health.reset_stream_baselines()
+
+
+def test_muted_mic_is_bad_while_live(monkeypatch, tmp_path):
+    from stream_manager import health
+    monkeypatch.setattr(health, "LOG_FILE", str(tmp_path / "h.jsonl"))
+    monkeypatch.setitem(cfg.config, "health", {"chat_alert": False})
+    health._prev = None; health._alerts.clear(); health._was_live = None
+    monkeypatch.setattr(health, "_system_checks", lambda c, m: None)
+    monkeypatch.setattr(health, "_integration_checks", lambda c, m: None)
+    monkeypatch.setattr(health, "_overlay_checks", lambda c, m: None)
+    monkeypatch.setattr(health.obs_ws, "fetch_stats",
+                        lambda mic_input="Mic/Aux": _obs_sample(muted=True))
+    snap = health.sample()
+    mic = next(c for c in snap["checks"] if c["id"] == "mic")
+    assert mic["status"] == "bad" and "MUTED" in mic["message"]
+    health._prev = None; health._alerts.clear()
+
+
+def test_default_mic_device_is_flagged(monkeypatch, tmp_path):
+    """Mic/Aux bound to the Windows default device switches mid-stream when a
+    headset connects — exactly what the 2026-09-02 OBS log recorded."""
+    from stream_manager import health
+    monkeypatch.setattr(health, "LOG_FILE", str(tmp_path / "h.jsonl"))
+    monkeypatch.setitem(cfg.config, "health", {"chat_alert": False})
+    health._prev = None; health._alerts.clear(); health._was_live = None
+    health._last_mic_device = None
+    monkeypatch.setattr(health, "_system_checks", lambda c, m: None)
+    monkeypatch.setattr(health, "_integration_checks", lambda c, m: None)
+    monkeypatch.setattr(health, "_overlay_checks", lambda c, m: None)
+    monkeypatch.setattr(health.obs_ws, "fetch_stats",
+                        lambda mic_input="Mic/Aux": _obs_sample(device="default"))
+    snap = health.sample()
+    dev = next(c for c in snap["checks"] if c["id"] == "mic_device")
+    assert dev["status"] == "warn" and "Windows default" in dev["message"]
+    health._prev = None; health._alerts.clear()
+
+
+def test_going_live_clears_the_welcome_list():
+    """Leaving Stream Manager running across two streams used to stop first-chat
+    greetings after the first one, because _greeted was never cleared."""
+    from stream_manager import health, alerts
+    alerts._greeted.clear()
+    alerts._greeted.update({"viewer_a", "viewer_b"})
+    health._was_live = False
+    health._note_live(True)
+    assert alerts._greeted == set()
+    health._was_live = None
+
+
+def test_obs_ws_error_is_actionable():
+    from stream_manager import obs_ws
+    import socket
+    msg = obs_ws._friendly(socket.timeout("timed out"), "192.168.1.26", 4455)
+    assert "127.0.0.1" in msg          # tells you how to fix a stale LAN IP
+    msg = obs_ws._friendly(ConnectionRefusedError(), "127.0.0.1", 4455)
+    assert "WebSocket Server Settings" in msg
+
+
+def test_bitrate_target_ignores_catchup_bursts(monkeypatch, tmp_path):
+    """When a stall clears, OBS flushes its buffer and one interval measures far
+    above the real bitrate. That burst must not become the learned target."""
+    from stream_manager import health
+    monkeypatch.setattr(health, "LOG_FILE", str(tmp_path / "h.jsonl"))
+    monkeypatch.setitem(cfg.config, "health", {"chat_alert": False, "bitrate_grace_sec": 0,
+                                               "audio_check": False})
+    health._prev = None; health._alerts.clear(); health._was_live = None
+    health.reset_stream_baselines()
+    monkeypatch.setattr(health, "_system_checks", lambda c, m: None)
+    monkeypatch.setattr(health, "_integration_checks", lambda c, m: None)
+    monkeypatch.setattr(health, "_overlay_checks", lambda c, m: None)
+    rate = {"kbps": 6000}
+    monkeypatch.setattr(health.obs_ws, "fetch_stats",
+                        lambda mic_input="Mic/Aux": _obs_sample(kbps=rate["kbps"]))
+    health.sample()
+    rate["kbps"] = 12000            # a normal 6000 kbps interval
+    health.sample()
+    peak_before = health._peak_kbps
+    rate["kbps"] = 42000            # 30000 kbps "interval" — a catch-up burst
+    health.sample()
+    assert health._peak_kbps == peak_before, "burst must not raise the learned target"
+    health._prev = None; health._alerts.clear(); health.reset_stream_baselines()

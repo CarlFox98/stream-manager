@@ -24,6 +24,31 @@ _OP_IDENTIFIED = 2
 _OP_REQUEST = 6
 _OP_REQUEST_RESPONSE = 7
 
+# Last connection outcome, so the dashboard can say *why* OBS is unreachable
+# instead of a bare "not reachable". Updated on every connect attempt.
+status = {"ok": False, "error": "not connected yet", "target": ""}
+
+
+def _friendly(exc, host, port):
+    """Turn a socket/websocket exception into something a streamer can act on."""
+    import errno, socket
+    name = type(exc).__name__
+    text = str(exc) or name
+    if isinstance(exc, socket.timeout) or "timed out" in text.lower():
+        return (f"no response from {host}:{port} — if OBS is on this PC set "
+                f"OBS_WEBSOCKET_HOST=127.0.0.1 in .env (a stale LAN IP times out like this)")
+    if isinstance(exc, ConnectionRefusedError) or getattr(exc, "errno", None) == errno.ECONNREFUSED:
+        return (f"connection refused at {host}:{port} — OBS is not running, or its WebSocket "
+                f"server is off (OBS → Tools → WebSocket Server Settings → Enable)")
+    if isinstance(exc, socket.gaierror):
+        return f"cannot resolve host '{host}' — check OBS_WEBSOCKET_HOST in .env"
+    low = text.lower()
+    if "authentication" in low or "auth" in low:
+        return "OBS rejected the password — copy it from OBS → Tools → WebSocket Server Settings → Show Connect Info"
+    if "unreachable" in low or "no route" in low:
+        return f"{host}:{port} is unreachable — check OBS_WEBSOCKET_HOST in .env"
+    return f"{name}: {text}"
+
 if websocket is None and os.environ.get("OBS_WEBSOCKET_PASSWORD"):
     print("[obs] OBS_WEBSOCKET_PASSWORD is set but the 'websocket-client' package "
           "isn't installed (pip install websocket-client) — falling back to process detection.")
@@ -40,7 +65,12 @@ def _connect():
     port = int(os.environ.get("OBS_WEBSOCKET_PORT") or 4455)
     password = os.environ.get("OBS_WEBSOCKET_PASSWORD", "")
 
-    ws = websocket.create_connection(f"ws://{host}:{port}", timeout=3)
+    status["target"] = f"{host}:{port}"
+    try:
+        ws = websocket.create_connection(f"ws://{host}:{port}", timeout=3)
+    except Exception as e:
+        status.update(ok=False, error=_friendly(e, host, port))
+        raise
     try:
         hello = json.loads(ws.recv())["d"]
         identify = {"rpcVersion": hello["rpcVersion"], "eventSubscriptions": 0}
@@ -53,21 +83,26 @@ def _connect():
         resp = json.loads(ws.recv())
         if resp.get("op") != _OP_IDENTIFIED:
             raise RuntimeError(f"OBS did not identify us: {resp}")
+        status.update(ok=True, error="")
         return ws
-    except Exception:
+    except Exception as e:
+        status.update(ok=False, error=_friendly(e, host, port))
         ws.close()
         raise
 
 
-def _request(ws, request_type):
-    ws.send(json.dumps({"op": _OP_REQUEST, "d": {"requestType": request_type, "requestId": request_type}}))
+def _request(ws, request_type, data=None):
+    payload = {"requestType": request_type, "requestId": request_type}
+    if data:
+        payload["requestData"] = data
+    ws.send(json.dumps({"op": _OP_REQUEST, "d": payload}))
     resp = json.loads(ws.recv())["d"]
     if not resp.get("requestStatus", {}).get("result"):
         raise RuntimeError(f"{request_type} failed: {resp.get('requestStatus', {}).get('comment')}")
     return resp.get("responseData", {})
 
 
-def fetch_stats():
+def fetch_stats(mic_input="Mic/Aux"):
     """One connection, both stats calls — the numbers the health monitor needs.
 
     Returns {"ok": bool, "stats": {...}, "stream": {...}} where:
@@ -82,12 +117,14 @@ def fetch_stats():
                                up in OBS as "dropped frames (network)".
     """
     if websocket is None:
-        return {"ok": False, "stats": {}, "stream": {}}
+        status.update(ok=False, error="the 'websocket-client' package isn't installed "
+                                      "(pip install websocket-client)")
+        return {"ok": False, "error": status["error"], "stats": {}, "stream": {}, "audio": {}}
     try:
         ws = _connect()
     except Exception:
-        return {"ok": False, "stats": {}, "stream": {}}
-    out = {"ok": True, "stats": {}, "stream": {}}
+        return {"ok": False, "error": status["error"], "stats": {}, "stream": {}, "audio": {}}
+    out = {"ok": True, "error": "", "stats": {}, "stream": {}, "audio": {}}
     try:
         try:
             out["stats"] = _request(ws, "GetStats") or {}
@@ -97,12 +134,53 @@ def fetch_stats():
             out["stream"] = _request(ws, "GetStreamStatus") or {}
         except Exception:
             pass
+        try:
+            out["audio"] = _audio_probe(ws, mic_input)
+        except Exception:
+            out["audio"] = {}
         return out
     finally:
         try:
             ws.close()
         except Exception:
             pass
+
+
+def _audio_probe(ws, mic_input):
+    """Mute state + bound device for the mic input, and every audio input's mute
+    state. Cheap: three requests on a connection we already have open.
+
+    Returns {"mic": {"name","muted","device"}, "muted_inputs": [...], "inputs": [...]}
+    """
+    out = {"mic": {}, "muted_inputs": [], "inputs": []}
+    try:
+        kinds = ("wasapi_input_capture", "wasapi_output_capture",
+                 "wasapi_process_output_capture", "coreaudio_input_capture",
+                 "pulse_input_capture", "pulse_output_capture")
+        inputs = (_request(ws, "GetInputList") or {}).get("inputs") or []
+        audio = [i for i in inputs if i.get("inputKind") in kinds]
+        out["inputs"] = [i.get("inputName") for i in audio]
+    except Exception:
+        audio = []
+    for i in audio:
+        name = i.get("inputName")
+        if not name:
+            continue
+        try:
+            muted = bool((_request(ws, "GetInputMute", {"inputName": name}) or {}).get("inputMuted"))
+        except Exception:
+            continue
+        if muted:
+            out["muted_inputs"].append(name)
+        if name == mic_input:
+            device = ""
+            try:
+                st = (_request(ws, "GetInputSettings", {"inputName": name}) or {}).get("inputSettings") or {}
+                device = str(st.get("device_id") or "")
+            except Exception:
+                pass
+            out["mic"] = {"name": name, "muted": muted, "device": device}
+    return out
 
 
 def get_obs_ws_status(state):

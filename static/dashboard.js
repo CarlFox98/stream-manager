@@ -634,7 +634,8 @@ function hmBeep() {
 const HM_METRICS = [
   ['dropped_pct',  'Dropped (net)', '%',    v => v.toFixed(1), 'dropped'],
   ['congestion',   'Congestion',    '',     v => v.toFixed(2), 'congestion'],
-  ['bitrate_kbps', 'Bitrate',       'kbps', v => fmtNum(Math.round(v)), null],
+  ['bitrate_kbps', 'Bitrate',       'kbps', v => fmtNum(Math.round(v)), 'bitrate'],
+  ['bitrate_pct',  'Of target',     '%',    v => v.toFixed(0), 'bitrate'],
   ['fps',          'FPS',           '',     v => v.toFixed(0), null],
   ['render_pct',   'Render lag',    '%',    v => v.toFixed(1), 'render'],
   ['encode_pct',   'Encode lag',    '%',    v => v.toFixed(1), 'encode'],
@@ -676,7 +677,7 @@ function renderMonitor(d) {
 
   const sub = $('#hm-sub');
   if (sub) {
-    if (!m.obs_ws) sub.textContent = 'OBS WebSocket not reachable — enable it in OBS → Tools → WebSocket Server Settings.';
+    if (!m.obs_ws) sub.textContent = 'OBS WebSocket: ' + (m.obs_ws_error || 'not reachable — enable it in OBS → Tools → WebSocket Server Settings.');
     else if (m.live) sub.textContent = `Live · ${fmtUptime(m.duration_sec || 0)} · monitoring every few seconds`;
     else sub.textContent = 'OBS connected · not streaming — stream metrics appear when you go live.';
   }

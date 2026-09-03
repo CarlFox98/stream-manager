@@ -102,18 +102,24 @@ _last_poll = {}
 
 def note_poll(channel):
     """Record that an overlay asked for this channel — its liveness heartbeat."""
-    _last_poll[channel] = time.time()
+    # Written from HTTP threads, read from the health-monitor thread; take the
+    # lock so a new channel appearing mid-iteration can't blow up subscribers().
+    with _lock:
+        _last_poll[channel] = time.time()
 
 
 def subscribers(max_age=90.0):
     """{channel: seconds_since_last_poll} for overlays seen within `max_age`."""
     now = time.time()
-    return {ch: round(now - ts, 1) for ch, ts in _last_poll.items() if now - ts <= max_age}
+    with _lock:
+        snapshot = list(_last_poll.items())
+    return {ch: round(now - ts, 1) for ch, ts in snapshot if now - ts <= max_age}
 
 
 def last_poll(channel):
     """Seconds since an overlay last polled this channel, or None if never."""
-    ts = _last_poll.get(channel)
+    with _lock:
+        ts = _last_poll.get(channel)
     return None if ts is None else round(time.time() - ts, 1)
 
 

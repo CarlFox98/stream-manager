@@ -18,6 +18,18 @@ _greeted = set()
 _followed = set()
 
 
+def reset_stream():
+    """Forget who we've greeted, so the next stream welcomes people again.
+
+    Called on the offline -> live transition (see health.py). Without this,
+    leaving Stream Manager running across two streams meant first-chat
+    greetings silently stopped working after the first one.
+    """
+    n = len(_greeted)
+    _greeted.clear()
+    return n
+
+
 def _cfg():
     a = config.get("alerts")
     return a if isinstance(a, dict) else {}
