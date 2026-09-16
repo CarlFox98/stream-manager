@@ -1,7 +1,4 @@
-# Stream Manager v0.10.6 — shoutout reliability (DRAFT)
-
-Draft notes for the shoutout work. Nothing here bumps `__version__` or tags a
-release — do that yourself when you're ready, then rename this file.
+# Stream Manager v0.10.6 — shoutout reliability + single instance
 
 ## Fixed
 
@@ -50,6 +47,36 @@ screen time and repeat guard were still spent, so a retry was refused too. The
 service now says so on the console. (Behaviour is unchanged; this is diagnosis,
 not a fix.)
 
+### Launching twice started a second copy instead of focusing the first
+
+`try_bind_port` walks ports 5000–5019 looking for a free one. That is right when
+something unrelated holds the default, but it also meant a second launch quietly
+started a **rival instance** one port up, with no warning on either console.
+
+The 2026-09-14 health log caught three running at once: three `stream_start`
+events within 0.1s of each other, three `Mic/Aux is MUTED` alerts, three
+`stream_stop`. Each instance polls OBS, holds its own chat connection, and
+writes the same log files, so every event was recorded three times and every
+diagnostic was three times noisier than the truth.
+
+Startup now probes `GET /api/ping` across the port range before binding anything.
+If a Stream Manager answers, it prints where the running copy is, opens that
+dashboard, and exits:
+
+```
+● Stream Manager is already running (v0.10.6, PID 24180) on http://localhost:5000
+  Opening that dashboard instead of starting a second copy.
+  Use --allow-multiple if you really want another instance.
+```
+
+The probe distinguishes "another Stream Manager" from "some unrelated program has
+this port" — only the former short-circuits startup, so the port-walking fallback
+still works as designed. `--allow-multiple` opts out.
+
+Covered by two tests that stand up real HTTP servers: one answering `/api/ping`
+as Stream Manager (must be detected), one answering something else (must be
+ignored).
+
 ## Documented
 
 ### Audio ducking was left out on purpose
@@ -70,3 +97,17 @@ for the reasoning and, if it's ever revisited, the failure mode to design for
   nested Base scene. The hosted one is hidden there now.
 - The hosted `PRISM Shoutout` source is hidden in all three scenes rather than
   deleted, so it is one click to bring back.
+
+## Tests
+
+55 total, run on Windows against Python 3.14.7 (the interpreter this actually
+ships on), ruff clean, and `data/` fingerprints verified unchanged across runs so
+the suite cannot pollute live diagnostics.
+
+## Note on the tag history
+
+Commit `66b51eb` was pushed by accident on 2026-09-15 carrying these changes
+under the previous release's message ("v0.10.5 - the request log was corrupting
+itself"), and it force-moved the `v0.10.5` tag off `a178279`. The tag has been
+restored to `a178279`, which is the real v0.10.5. `66b51eb` is left in history
+rather than rewritten; this release is what describes its contents.
