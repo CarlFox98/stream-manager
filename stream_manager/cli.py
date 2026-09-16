@@ -8,6 +8,7 @@ from .config import config, TWITCH_USER, TWITCH_CLIENT_ID, DASHBOARD_PASSWORD
 from .console import style, icon, grad
 from .logging_util import setup_file_logging
 from .scenes import ACTIVE_DIR, ACTIVE_DIRNAME, available_sets, detect_active_set
+from . import server as server_mod
 from .server import try_bind_port
 from .state import state
 
@@ -18,6 +19,7 @@ def parse_args():
     p.add_argument("--poll", type=int, default=0, help="Poll interval in seconds (overrides config.json)")
     p.add_argument("--no-browser", action="store_true", help="Don't open dashboard in browser")
     p.add_argument("--lan", action="store_true", help="Bind to 0.0.0.0 so other devices on your network can reach the dashboard (overrides config.json)")
+    p.add_argument("--allow-multiple", action="store_true", help="Start even if another Stream Manager is already running (not recommended — they fight over OBS, chat and the log files)")
     p.add_argument("--check-update", action="store_true", help="Check GitHub for a newer version and exit")
     p.add_argument("--update", action="store_true", help="Check, then (after confirmation) download & install the latest version")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -65,6 +67,24 @@ def main():
         config["poll_interval"] = args.poll
     if args.lan:
         config["lan"] = True
+    # ── single instance ──────────────────────────────────────────────────
+    # Before touching logs, OBS or Twitch: if a copy is already running, hand
+    # the user its dashboard instead of starting a rival. Two instances race
+    # over the same chat connection, OBS socket and log files, and every health
+    # event gets recorded once per instance.
+    if not args.allow_multiple:
+        running_port, info = server_mod.detect_running_instance(config["port"])
+        if running_port:
+            url = f"http://localhost:{running_port}/dashboard"
+            print(f"\n  {style('Y', '●')} Stream Manager is already running "
+                  f"(v{info.get('version', '?')}, PID {info.get('pid', '?')}) on "
+                  f"{style('W', f'http://localhost:{running_port}')}")
+            print(f"  {style('D', 'Opening that dashboard instead of starting a second copy.')}")
+            print(f"  {style('D', 'Use --allow-multiple if you really want another instance.')}\n")
+            if not args.no_browser:
+                webbrowser.open(url)
+            sys.exit(0)
+
     setup_file_logging(config["log_file"])
     health.start()          # Stream Health Monitor (runs whether or not you're live)
     bind_host = "0.0.0.0" if config["lan"] else "127.0.0.1"

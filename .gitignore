@@ -13,6 +13,9 @@ dist/
 PUSH*.bat
 publish_*.ps1
 PUSH-RESULT.txt
+RUN TESTS.bat
+TEST-RESULT.txt
+.venv-test/
 .env
 *.log
 *.log.old

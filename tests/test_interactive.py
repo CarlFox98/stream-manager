@@ -263,6 +263,56 @@ def test_token_request_falls_back_to_pkce(monkeypatch):
     assert seen == [True, False]   # tried with secret, then without
 
 
+# ── effects endpoint: first poll must not replay the backlog ─────────────────
+def _get(path):
+    """Drive Handler.do_GET over fake socket files and return (status, json)."""
+    import io as _io, json as _json
+    from stream_manager import server
+
+    class _Fake(server.Handler):
+        def __init__(self):                      # bypass BaseHTTPRequestHandler.__init__
+            self.rfile = _io.BytesIO(b"")
+            self.wfile = _io.BytesIO()
+            self.client_address = ("127.0.0.1", 0)
+            self.requestline = "GET %s HTTP/1.1" % path
+            self.request_version = "HTTP/1.1"
+            self.command = "GET"
+            self.path = path
+            self.headers = {}
+        def log_message(self, *a, **k):
+            pass
+
+    h = _Fake()
+    h.do_GET()
+    raw = h.wfile.getvalue().decode("utf-8", "replace")
+    head, _, body = raw.partition("\r\n\r\n")
+    status = int(head.split()[1])
+    return status, _json.loads(body)
+
+
+def test_effects_first_poll_returns_head_not_backlog():
+    """OBS restarts a browser source every time its scene becomes active, and
+    every overlay starts at lastId=0. If since=0 replayed the ring buffer, one
+    scene switch would fire every effect of the session back to back."""
+    effects.emit("wheel", {"x": 1})
+    last = effects.emit("wheel", {"x": 2})
+
+    status, first = _get("/api/effects/wheel?since=0")
+    assert status == 200
+    assert first["events"] == []              # no backlog on a fresh overlay
+    assert first["last_id"] == last           # but it is caught up
+
+    # a consumer that already has an id still gets what it missed
+    after = effects.emit("wheel", {"x": 3})
+    status, catchup = _get("/api/effects/wheel?since=%d" % last)
+    assert status == 200
+    assert [e["id"] for e in catchup["events"]] == [after]
+
+    # an unknown channel is empty and does not raise
+    status, none = _get("/api/effects/nosuchchannel?since=0")
+    assert status == 200 and none["events"] == []
+
+
 # ── server hardening (path safety + CSRF token gating) ───────────────────────
 def test_safe_join_blocks_traversal(tmp_path):
     from stream_manager import server
@@ -702,16 +752,79 @@ def test_default_mic_device_is_flagged(monkeypatch, tmp_path):
     health._prev = None; health._alerts.clear()
 
 
-def test_going_live_clears_the_welcome_list():
+def test_going_live_clears_the_welcome_list(tmp_path, monkeypatch):
     """Leaving Stream Manager running across two streams used to stop first-chat
-    greetings after the first one, because _greeted was never cleared."""
+    greetings after the first one, because _greeted was never cleared.
+
+    LOG_FILE is redirected because _note_live writes a stream_start entry: without
+    this the suite appended fake stream_start events to the real
+    data/health-log.jsonl every time it ran, polluting the diagnostics we rely on
+    to review an actual stream.
+    """
     from stream_manager import health, alerts
+    monkeypatch.setattr(health, "LOG_FILE", str(tmp_path / "h.jsonl"))
     alerts._greeted.clear()
     alerts._greeted.update({"viewer_a", "viewer_b"})
     health._was_live = False
     health._note_live(True)
     assert alerts._greeted == set()
     health._was_live = None
+
+
+def test_detects_a_second_instance_and_ignores_other_apps():
+    """try_bind_port walks 5000-5019 for a free port, so launching the app twice
+    used to start a rival one port up. The 2026-09-14 health log caught three
+    instances running at once, recording every event three times.
+
+    A real socket is used rather than a mock, so this exercises the actual probe:
+    one server answers /api/ping like Stream Manager, another answers something
+    else, and only the first must be recognised.
+    """
+    import json as _json
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from stream_manager import server as server_mod
+
+    def make(payload, path="/api/ping"):
+        class H(BaseHTTPRequestHandler):
+            def do_GET(self):
+                body = _json.dumps(payload).encode()
+                code = 200 if self.path == path else 404
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+        srv = HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        return srv
+
+    ours = make({"app": server_mod.PING_APP, "version": "9.9.9", "pid": 4321})
+    other = make({"app": "something-else"})
+    try:
+        port = ours.server_address[1]
+        found, info = server_mod.detect_running_instance(port, span=1)
+        assert found == port
+        assert info["version"] == "9.9.9" and info["pid"] == 4321
+
+        # an unrelated app on the port must NOT count as our instance
+        found, info = server_mod.detect_running_instance(other.server_address[1], span=1)
+        assert (found, info) == (None, None)
+    finally:
+        ours.shutdown(); other.shutdown()
+
+
+def test_detect_returns_none_when_nothing_is_listening():
+    import socket as _socket
+    from stream_manager import server as server_mod
+    with _socket.socket() as s:          # grab a port, then free it
+        s.bind(("127.0.0.1", 0))
+        free_port = s.getsockname()[1]
+    found, info = server_mod.detect_running_instance(free_port, span=1, timeout=0.2)
+    assert (found, info) == (None, None)
 
 
 def test_obs_ws_error_is_actionable():

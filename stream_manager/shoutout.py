@@ -352,6 +352,16 @@ def _shoutout(login, source, viewers, say):
     data["raid"] = is_raid
     data["raiders"] = viewers if is_raid else 0
 
+    # The card is delivered to whichever overlay is long-polling the shoutout
+    # channel. OBS shuts a browser source down while its scene is inactive, so
+    # on a scene with no shoutout overlay there is nobody to deliver to — and
+    # the effects bus deliberately does not replay a backlog to a late joiner.
+    # The screen time and repeat guard below are still spent, so say so rather
+    # than letting the card vanish silently.
+    if effects.last_poll("shoutout") is None:
+        print("[shoutout] no overlay is listening - the card for "
+              f"{data['login']} will not be shown (check the current scene)")
+
     effects.emit("shoutout", data,
                  summary=f"◇ Shoutout: {data['name']}" + (f" (raid {viewers})" if is_raid else ""))
     with _lock:
@@ -413,12 +423,31 @@ def on_raid(login, viewers, say=None):
     return do_shoutout(login, "raid", viewers, say)
 
 
-# ── clip playback state (the overlay reports it; drives OBS ducking) ───────
+# ── clip playback state (status only — see the note below) ──────────────────
+#
+# NOT A DUCKING HOOK. The overlay reports when a clip really starts and stops,
+# and that is all this is for: the dashboard and the health monitor use it to
+# tell "a card is on screen" from "a card was queued and never played".
+#
+# Automatic OBS audio ducking was deliberately left out of Stream Manager. The
+# PRISM service had it, and it was the single most fragile thing in the whole
+# feature: it lowered real mixer levels over obs-websocket and had to put them
+# back, so every failure mode - a dropped socket, a clip that never starts, a
+# crash mid-clip, a restore that itself fails - risked leaving the stream
+# permanently quiet. It needed a saved-levels snapshot, a watchdog, an
+# emergency restore and a lock around a shared socket to be safe, and a bug in
+# any one of them is silent until someone watches the VOD. Ducking during a
+# ~15-second clip is a small win for that much load-bearing machinery; the mic
+# and desktop levels are set once and left alone instead.
+#
+# If it is ever rebuilt: the failure to design for is a FAILED RESTORE, not a
+# failed duck. Never clear the saved levels except on a successful restore,
+# and never cancel the watchdog while any saved level is still outstanding.
 _clip = {"playing": False, "at": 0.0}
 
 
 def set_clip_playing(active):
-    """Called when the overlay starts/stops a clip. Hook point for audio ducking."""
+    """Called when the overlay starts/stops a clip. Status only - no ducking."""
     _clip["playing"] = bool(active)
     _clip["at"] = time.time()
     return dict(_clip)

@@ -6,6 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from . import scenes, updater
 from . import actions, chat, commands, effects, eventsub, games, health, quotes, redeems, shoutout, spotify, stats, timers, twitch_auth
 from . import config as config_mod
+from . import __version__
 from .config import OVERLAYS_DIR, RESOURCE_DIR, DASHBOARD_PASSWORD, config
 from .console import style
 from .logging_util import write_file_log
@@ -13,6 +14,9 @@ from .state import state
 
 STATIC_DIR = os.path.realpath(os.path.join(RESOURCE_DIR, "static"))
 _OVERLAYS_ROOT = os.path.realpath(OVERLAYS_DIR)
+
+# Value returned by /api/ping so a second launch can recognise its own kind.
+PING_APP = "stream-manager"
 
 # Per-run secret. The dashboard is served with this token baked into a <meta>
 # tag; its JavaScript echoes it back in an X-SM-Token header on every state-
@@ -209,6 +213,16 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/status":
             self.serve_json(state); return
 
+        # Identity probe. A starting instance uses this to tell "another Stream
+        # Manager is already here" from "some unrelated app has the port", so it
+        # can focus the running dashboard instead of quietly starting a rival on
+        # the next port up. Deliberately tiny and dependency-free.
+        if self.path == "/api/ping":
+            self.serve_json({
+                "app": PING_APP, "version": __version__,
+                "pid": os.getpid(), "port": state["server"]["port"],
+            }); return
+
         if self.path == "/api/health":
             self.serve_json({
                 "status": "ok", "port": state["server"]["port"],
@@ -246,9 +260,18 @@ class Handler(BaseHTTPRequestHandler):
                 since = 0
             effects.note_poll(channel)   # overlay heartbeat (health monitor)
             # Long-poll once the consumer is established (since>0): hold the
-            # request open until a new effect fires. First poll (since=0)
-            # returns immediately so overlays get the current head id.
-            data = effects.wait_events(channel, since) if since > 0 else effects.since(channel, since)
+            # request open until a new effect fires.
+            #
+            # First poll (since=0) hands back ONLY the current head id, never
+            # the backlog. Every overlay starts at lastId=0 and OBS restarts a
+            # browser source each time its scene becomes active ("Shutdown
+            # source when not visible"), so replaying the ring buffer meant one
+            # scene switch fired every shoutout, hype, wheel, slots and
+            # coinflip effect of the whole session back to back.
+            if since > 0:
+                data = effects.wait_events(channel, since)
+            else:
+                data = {"events": [], "last_id": effects.head(channel)}
             self.serve_json(data); return
 
         if parsed.path == "/api/interactive":
@@ -685,6 +708,38 @@ class _Server(ThreadingHTTPServer):
         if isinstance(e, (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, TimeoutError)):
             return
         super().handle_error(request, client_address)
+
+
+def detect_running_instance(start, span=20, host="127.0.0.1", timeout=0.4):
+    """Return (port, info) of a Stream Manager already running, or (None, None).
+
+    try_bind_port walks start..start+19 looking for a free port, which is right
+    when something unrelated holds the default — but it also meant launching the
+    app twice quietly started a *second* copy one port up. The 2026-09-14 health
+    log shows three instances running at once, each polling OBS and each writing
+    the same log files, so every event was recorded three times.
+
+    Probing /api/ping distinguishes "another Stream Manager is already here" from
+    "some other program has this port", so only the former short-circuits startup.
+    Always probes loopback: even in --lan mode the local instance answers there.
+    """
+    import urllib.error
+    import urllib.request
+
+    for port in range(start, start + span):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(timeout)
+            if probe.connect_ex((host, port)) != 0:
+                continue                      # nothing listening — keep looking
+        try:
+            req = urllib.request.Request(f"http://{host}:{port}/api/ping")
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                info = json.loads(resp.read().decode("utf-8"))
+        except Exception:
+            continue                          # listening, but not us
+        if isinstance(info, dict) and info.get("app") == PING_APP:
+            return port, info
+    return None, None
 
 
 def try_bind_port(start, host="127.0.0.1"):
