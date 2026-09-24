@@ -274,6 +274,22 @@ class Handler(BaseHTTPRequestHandler):
                 data = {"events": [], "last_id": effects.head(channel)}
             self.serve_json(data); return
 
+        # PRISM chat overlay: the newest N messages still in the ring buffer.
+        # The shared /api/effects first poll deliberately returns no backlog
+        # (replaying it once fired a session of shoutouts on one scene switch).
+        # Chat wants the opposite after an OBS refresh, so it gets its own read
+        # instead of changing behaviour every other overlay depends on.
+        if parsed.path == "/api/chat/backfill":
+            qs = urllib.parse.parse_qs(parsed.query)
+            try:
+                n = max(0, min(100, int(qs.get("n", ["25"])[0])))
+            except (ValueError, TypeError):
+                n = 25
+            res = effects.since("chat", 0)
+            evs = res["events"][-n:] if n else []
+            self.serve_json({"messages": [e["data"] for e in evs],
+                             "last_id": res["last_id"]}); return
+
         if parsed.path == "/api/interactive":
             self.serve_json(interactive_status()); return
 
@@ -626,8 +642,11 @@ p{{color:#b7a8d6;margin:0}}</style></head>
             while True:
                 res = effects.wait_global(last, timeout=20)
                 last = res["last_id"]
-                if res["events"]:
-                    for ev in res["events"]:
+                # Chat is high volume and has its own consumer; letting it onto
+                # the dashboard stream would drown every other effect.
+                evs = [e for e in res["events"] if e.get("channel") != "chat"]
+                if evs:
+                    for ev in evs:
                         payload = json.dumps({"channel": ev["channel"], "data": ev["data"],
                                               "summary": ev.get("summary"), "id": ev["id"], "ts": ev["ts"]})
                         self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))

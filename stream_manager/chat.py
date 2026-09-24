@@ -9,7 +9,7 @@ Runs on a daemon thread with automatic reconnect + exponential backoff.
 """
 import socket, ssl, threading, time
 
-from . import games, twitch_auth
+from . import chatfeed, effects, games, twitch_auth
 from .config import TWITCH_USER, config
 
 HOST = "irc.chat.twitch.tv"
@@ -93,6 +93,15 @@ def _handle_privmsg(tags, prefix, params, channel):
     user = tags.get("display-name") or nick
     text = params[-1] if params else ""
     status["received"] += 1
+    # Broadcast every message to the PRISM chat overlay (channel "chat").
+    # summary=None on purpose: a summary would push each line into the
+    # dashboard's 25-entry activity feed and bury every shoutout and redeem.
+    # Wrapped because this thread also runs !commands — a malformed message
+    # must never take the IRC client down with it.
+    try:
+        effects.emit("chat", chatfeed.message(tags, prefix, text), summary=None)
+    except Exception as e:
+        print(f"[chat] feed error: {e}")
     # First-time chatter of the stream → alert (Twitch tags the message).
     if tags.get("first-msg") == "1":
         try:
