@@ -125,6 +125,48 @@ def _handle_privmsg(tags, prefix, params, channel):
         print(f"[chat] command error: {e}")
 
 
+def _emit_mod(build, *args):
+    """Build and push a moderation event to the PRISM chat overlay.
+
+    Never raises: a mod deleting a message is exactly the moment the IRC thread
+    must not die. The BUILD is inside the guard as well as the emit — wrapping
+    only the emit left a malformed payload free to take the connection down,
+    which is the whole failure this exists to prevent.
+    """
+    try:
+        effects.emit("chat", build(*args), summary=None)
+    except Exception as e:
+        print(f"[chat] mod feed error: {e}")
+
+
+def dispatch(tags, prefix, command, params, channel):
+    """Route one parsed IRC line. Returns False to close the connection.
+
+    Split out of the read loop so the CLEARMSG/CLEARCHAT param shapes can be
+    tested directly — a test that re-implements this indexing instead of calling
+    it would stay green through exactly the mistake that matters (reading a
+    per-user timeout as a whole-room clear wipes the overlay).
+    """
+    if command == "PING":
+        _raw("PONG :" + (params[-1] if params else "tmi.twitch.tv"))
+    elif command == "PRIVMSG":
+        _handle_privmsg(tags, prefix, params, channel)
+    elif command == "CLEARMSG":
+        # ["#channel", "the deleted text"]; tags carry target-msg-id.
+        _emit_mod(chatfeed.clearmsg, tags, params[-1] if len(params) > 1 else "")
+    elif command == "CLEARCHAT":
+        # ["#channel"] = whole chat cleared; ["#channel", "login"] = that one
+        # user timed out or banned.
+        _emit_mod(chatfeed.clearchat, tags, params[-1] if len(params) > 1 else "")
+    elif command in ("001", "GLOBALUSERSTATE", "JOIN"):
+        status["connected"] = True
+    elif command == "NOTICE" and params and "authentication failed" in params[-1].lower():
+        status["error"] = "authentication failed — re-authorize on the dashboard"
+        _stop_flag_soft()
+        return False
+    return True
+
+
 def _connect_and_run():
     global _sock
     token = twitch_auth.get_user_token()
@@ -149,6 +191,12 @@ def _connect_and_run():
     # so we can send faster. A separate, non-mod bot account stays at the safe pace.
     global _min_interval
     _min_interval = 0.5 if login.lower() == channel.lower() else 1.6
+    # Non-blocking: kicks a background Helix read so badge URLs are usually
+    # resolved before the first PRIVMSG arrives. Never fetches on this thread.
+    try:
+        chatfeed.warm()
+    except Exception as e:
+        print(f"[chat] badge warm-up skipped: {e}")
 
     buf = ""
     while not _stop.is_set():
@@ -167,15 +215,7 @@ def _connect_and_run():
             if not line:
                 continue
             tags, prefix, command, params = _parse(line)
-            if command == "PING":
-                _raw("PONG :" + (params[-1] if params else "tmi.twitch.tv"))
-            elif command == "PRIVMSG":
-                _handle_privmsg(tags, prefix, params, channel)
-            elif command in ("001", "GLOBALUSERSTATE", "JOIN"):
-                status["connected"] = True
-            elif command == "NOTICE" and params and "authentication failed" in params[-1].lower():
-                status["error"] = "authentication failed — re-authorize on the dashboard"
-                _stop_flag_soft()
+            if not dispatch(tags, prefix, command, params, channel):
                 return False
     return True
 

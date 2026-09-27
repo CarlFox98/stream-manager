@@ -192,6 +192,13 @@ MIME_MAP = {
     ".html": "text/html", ".css": "text/css", ".js": "application/javascript",
     ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
     ".svg": "image/svg+xml", ".json": "application/json",
+    # The overlays' vendored webfonts. Fonts happen to load as
+    # application/octet-stream in CEF today, but that is the browser being
+    # lenient, not a contract — and one nosniff header away from breaking.
+    ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf",
+    ".otf": "font/otf", ".gif": "image/gif", ".webp": "image/webp",
+    ".ico": "image/x-icon", ".mp3": "audio/mpeg", ".ogg": "audio/ogg",
+    ".webm": "video/webm", ".mp4": "video/mp4",
 }
 
 
@@ -286,7 +293,21 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, TypeError):
                 n = 25
             res = effects.since("chat", 0)
-            evs = res["events"][-n:] if n else []
+            # n counts MESSAGES, not events: moderation events share this ring
+            # buffer, so slicing the last n events would quietly restore fewer
+            # messages the busier the mods were. Walk back until n messages are
+            # in view, then keep everything from there on — the moderation
+            # events after them have to replay in order or a deleted message
+            # comes back on an OBS source refresh.
+            evs, seen = [], 0
+            if n:
+                for ev in reversed(res["events"]):
+                    evs.append(ev)
+                    if (ev.get("data") or {}).get("kind") == "msg":
+                        seen += 1
+                        if seen >= n:
+                            break
+                evs.reverse()
             self.serve_json({"messages": [e["data"] for e in evs],
                              "last_id": res["last_id"]}); return
 
