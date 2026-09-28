@@ -12,6 +12,7 @@ A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system stat
 - **Overlay scene sets** — switch your whole overlay theme from the dashboard; OBS Browser Sources point at stable URLs
 - **Interactive games & redeems** — coin flip, 50/50, slots, dice, 8-ball, duel, and weighted **Lucky** / **Risky** wheels via chat commands *and* channel-point redeems, with PRISM overlays (with sound). Plus a **quote system**, **timed messages**, **first-chatter & new-follower alerts**, raid/bits/sub hype via EventSub, opt-in automated outcomes, a leaderboard, and cooldowns. See **[INTERACTIVE.md](INTERACTIVE.md)**
 - **Stream Health Monitor** — watches dropped frames, **sustained bitrate vs target** (catches the quality loss Dynamic Bitrate hides), congestion, render/encode lag, **a muted or mis-bound microphone**, CPU/RAM, free disk, chat/EventSub/auth and overlay heartbeats; raises a banner + toast + beep (and optionally a chat notice) the moment something goes wrong, logs every incident to `data/health-log.jsonl`, and offers a one-click **preflight** check before you go live
+- **Chat feed for overlays** — every chat message is normalised and published on a `chat` effects channel, so an overlay can render chat with no second IRC connection and no second set of credentials. Badges, Twitch emotes, mentions, replies, cheers, `/me` and moderation (`CLEARMSG` / `CLEARCHAT`) all come through. `GET /api/chat/backfill?n=25` returns the newest messages still in the ring buffer so an overlay repopulates after an OBS refresh. PRISM's chat overlay is deployed into `static/chat/` and consumes it
 - **Real-time** — overlays get effects instantly (long-poll) and the dashboard streams live events (SSE)
 - **Spotify now-playing** — one-click connect, a `!song` command, and a dashboard widget (optional)
 - **One-click Twitch login** — a browser window opens for you to approve; no codes to copy
@@ -103,8 +104,14 @@ python stream-manager.py [flags]
 
 ## Security
 
-By default the server only listens on `127.0.0.1` — nothing else on your network can reach the dashboard or its API. Pass `--lan` (or set `"lan": true` in `config.json`) if you want to check the dashboard from your phone or another device on the same network; the startup banner always states plainly which mode is active. There's no authentication of any kind, so only enable `--lan` on networks you trust.
+By default the server only listens on `127.0.0.1` — nothing else on your network can reach the dashboard or its API. Pass `--lan` (or set `"lan": true` in `config.json`) if you want to check the dashboard from your phone or another device on the same network; the startup banner always states plainly which mode is active.
+
+Two things guard it. Every state-changing endpoint requires a session token that is generated fresh each run and compared in constant time, so a web page you happen to visit cannot POST to the dashboard. And in `--lan` mode, setting `SM_DASHBOARD_PASSWORD` requires HTTP Basic auth from any non-localhost client; localhost (OBS on the same PC) is always exempt.
+
+That is enough to keep a stray browser tab or a curious housemate out. It is not hardening for a hostile network: there is no TLS, and without `SM_DASHBOARD_PASSWORD` the `--lan` dashboard is readable by anyone who can reach the port. Only enable `--lan` on networks you trust.
 
 ## Updating
+
+The updater reads GitHub **Releases** (not tags), so a version only reaches anyone once a Release is published for its tag.
 
 The dashboard shows a banner when a newer version is available on GitHub, with a one-click install (your current files are backed up to `.update-backup/` first; restart afterward to apply). Or from the command line: `python stream-manager.py --check-update` / `--update`.
