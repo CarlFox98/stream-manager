@@ -183,6 +183,15 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, .url-item:focus
 }
 .scene-btn:disabled { opacity: 0.45; cursor: default; }
 
+/* Restart and Shut Down arm on the first click and fire on the second. A
+   native confirm() would do the same job, but it blocks the page (and the
+   layout tests) on a modal the browser owns. */
+.scene-btn.danger { border-color: rgba(255,107,129,0.4); color: #ffb3bd; }
+.scene-btn.danger:hover:not(:disabled) { background: rgba(255,107,129,0.14); color: #fff; border-color: rgba(255,107,129,0.75); }
+.scene-sub.warn { color: var(--warn); }
+.scene-btn.armed,
+.scene-btn.danger.armed { background: rgba(255,107,129,0.22); border-color: #ff6b81; color: #fff; }
+
 .btn-primary {
   padding: 10px 18px; font-size: 13px; color: #241a00; border: none;
   background: var(--grad-warm); box-shadow: 0 4px 16px rgba(255,122,203,0.25);

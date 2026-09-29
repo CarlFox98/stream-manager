@@ -1,10 +1,10 @@
 """HTTP request routing: dashboard, JSON API, and safe static/overlay file serving."""
-import base64, json, os, secrets, socket, urllib.parse
+import base64, json, os, secrets, socket, time, urllib.parse
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import scenes, updater
-from . import actions, chat, commands, effects, eventsub, games, health, quotes, redeems, shoutout, spotify, stats, timers, twitch_auth
+from . import actions, chat, commands, effects, eventsub, games, health, quotes, redeems, shoutout, spotify, stats, timers, twitch_auth, lifecycle
 from . import config as config_mod
 from . import __version__
 from .config import OVERLAYS_DIR, RESOURCE_DIR, DASHBOARD_PASSWORD, config
@@ -32,6 +32,7 @@ _PROTECTED_POSTS = {
     "/api/update/install", "/auth/logout",
     "/api/commands/toggle", "/api/commands/custom", "/api/config/save",
     "/api/timers/save", "/auth/spotify", "/auth/spotify/logout",
+    "/api/lifecycle/restart", "/api/lifecycle/shutdown",
 }
 
 # config.json sections the dashboard editor may write.
@@ -372,14 +373,17 @@ class Handler(BaseHTTPRequestHandler):
         tok = self.headers.get("X-SM-Token", "")
         return bool(tok) and secrets.compare_digest(tok, SESSION_TOKEN)
 
+    def _is_loopback(self):
+        host = self.client_address[0] if self.client_address else ""
+        return host in ("127.0.0.1", "::1", "::ffff:127.0.0.1")
+
     def _lan_auth_ok(self):
         """When --lan + SM_DASHBOARD_PASSWORD are set, require HTTP Basic auth
         from non-localhost clients. Localhost (OBS on this PC) is always exempt.
         Sends a 401 and returns False when auth is required but missing/wrong."""
         if not config.get("lan") or not DASHBOARD_PASSWORD:
             return True
-        host = self.client_address[0] if self.client_address else ""
-        if host in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+        if self._is_loopback():
             return True
         hdr = self.headers.get("Authorization", "")
         if hdr.startswith("Basic "):
@@ -584,8 +588,54 @@ class Handler(BaseHTTPRequestHandler):
                             status=200 if ok else 400)
             return
 
+        if self.path in ("/api/lifecycle/restart", "/api/lifecycle/shutdown"):
+            self.serve_lifecycle(self.path.rsplit("/", 1)[-1]); return
+
         self.send_response(404); self.end_headers()
         self.wfile.write(b"Not found")
+
+    def serve_lifecycle(self, action):
+        """Restart or shut the app down, from the dashboard or prism-ctl.
+
+        Three gates, and each one is load-bearing:
+          · the session token (via _PROTECTED_POSTS) — blocks CSRF
+          · loopback only — blocks every other device, password or not
+          · confirm: true — blocks a stray fetch with an empty body
+        """
+        # Stopping the stream's brain is not something a phone on the LAN gets
+        # to do, even holding the dashboard password. --lan exists so you can
+        # *watch* the dashboard from the couch, not drive it.
+        if not self._is_loopback():
+            self.serve_json({"ok": False, "error":
+                             "Restart and shutdown are local-only — use the machine running Stream Manager."},
+                            status=403); return
+
+        body = self._read_json()
+        if body is None:
+            self.serve_json({"ok": False, "error": "Invalid request body"}, status=400); return
+        if body.get("confirm") is not True:
+            self.serve_json({"ok": False, "error": "Confirmation required (confirm: true)"}, status=400); return
+
+        # Restarting means exiting with code 42 and trusting someone to bring us
+        # back. Launched from a bare `python stream-manager.py`, nobody will —
+        # so say that instead of quietly turning Restart into Shutdown.
+        if action == "restart" and not lifecycle.supervised():
+            self.serve_json({"ok": False, "error":
+                             "Nothing is supervising this instance, so restarting would just stop it. "
+                             'Launch it with "Start Stream Manager.bat" or the tray app.'},
+                            status=409); return
+
+        if lifecycle.requested():
+            # Already stopping — a double-click must not become restart-then-quit.
+            self.serve_json({"ok": True, "action": lifecycle.requested(), "already": True}); return
+
+        # Log BEFORE starting the clock. self.log takes a process-global file
+        # lock and can rotate server.log while holding it, which would spend a
+        # chunk of the grace period before this response is even written.
+        self.log(f"{action.capitalize()} requested from the dashboard", "!")
+        if not lifecycle.request(action):
+            self.serve_json({"ok": True, "action": lifecycle.requested(), "already": True}); return
+        self.serve_json({"ok": True, "action": action, "grace": lifecycle.RESPONSE_GRACE})
 
     def serve_dashboard(self):
         path = os.path.join(STATIC_DIR, "dashboard.html")
@@ -782,14 +832,62 @@ def detect_running_instance(start, span=20, host="127.0.0.1", timeout=0.4):
     return None, None
 
 
-def try_bind_port(start, host="127.0.0.1"):
-    """Try to bind HTTP server on start..start+19. Returns (server, port) or raises."""
-    for port in range(start, start + 20):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as _s:
-            try:
-                _s.bind((host, port))
-            except OSError:
-                continue
-        s = _Server((host, port), Handler)
-        return s, port
+def _try_one(port, host):
+    """A bound _Server on this port, or None if the port isn't available.
+
+    Binds the real server rather than test-binding a bare socket first. That
+    probe was strictly STRICTER than the thing it was guarding: _Server sets
+    SO_REUSEADDR (HTTPServer.allow_reuse_address = 1) and binds happily over a
+    TIME_WAIT entry, while the bare probe got EADDRINUSE and reported the port
+    as taken.
+
+    And there is always a TIME_WAIT entry after a restart. The dashboard's SSE
+    stream and every OBS browser source's long poll are open connections that
+    the server closes first, so the port sits in TIME_WAIT for a minute on
+    Linux and up to four on Windows — far past any settle window. The probe
+    turned "restart" into "come back on port 5001 and let every overlay go
+    blank", which is exactly the failure try_bind_port is meant to prevent.
+    """
+    try:
+        return _Server((host, port), Handler)
+    except OSError:
+        return None
+
+
+# How long to keep asking for the configured port before walking past it.
+PORT_SETTLE = 2.0
+
+
+def try_bind_port(start, host="127.0.0.1", settle=None):
+    """Try to bind HTTP server on start..start+19. Returns (server, port) or raises.
+
+    The configured port gets a grace period of its own before we give up on it.
+    On a restart the previous instance let go of it a fraction of a second ago
+    and the OS may not have released it yet — and walking to the next port is
+    the worst available answer, because every OBS browser source and every
+    bookmark points at the old one. The overlays would go blank mid-stream and
+    nothing would say why. Waiting two seconds for the right port beats coming
+    back instantly on the wrong one.
+    """
+    # Read at call time, not baked into the signature — a default argument
+    # can't be overridden by a test, which is how a test ends up asserting on
+    # the number it passed in rather than the one that ships.
+    if settle is None:
+        settle = PORT_SETTLE
+    deadline = time.monotonic() + max(0.0, settle)
+    while True:
+        s = _try_one(start, host)
+        if s is not None:
+            # server_address, not `start`: with start=0 the OS picks the port
+            # and everything downstream (OAuth redirect URIs, runtime.json,
+            # the banner) would otherwise be told 0.
+            return s, s.server_address[1]
+        if time.monotonic() >= deadline:
+            break
+        time.sleep(0.15)
+
+    for port in range(start + 1, start + 20):
+        s = _try_one(port, host)
+        if s is not None:
+            return s, s.server_address[1]
     raise RuntimeError(f"Could not bind to any port in range {start}-{start+19}")

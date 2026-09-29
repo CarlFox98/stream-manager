@@ -88,7 +88,14 @@ def reset():
 
 
 def save():
-    """Persist cooldown windows so they survive a restart."""
+    """Persist cooldown windows so they survive a restart.
+
+    Written to a temp file and renamed, like stats.py. A plain open(..., "w")
+    truncates first, so a process killed in that window leaves an empty file —
+    load() then throws, the error is swallowed, and the run starts with no
+    anti-spam state at all. That used to need a machine crash; now the tray
+    can terminate a hung child on any Quit.
+    """
     try:
         os.makedirs(os.path.dirname(_FILE), exist_ok=True)
         cutoff = time.time() - _MAX_AGE
@@ -97,8 +104,10 @@ def save():
                 "global": {a: ts for a, ts in _last_global.items() if ts >= cutoff},
                 "user": {f"{a}|{u}": ts for (a, u), ts in _last_user.items() if ts >= cutoff},
             }
-        with open(_FILE, "w", encoding="utf-8") as f:
+        tmp = _FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f)
+        os.replace(tmp, _FILE)
     except Exception as e:
         print(f"[cooldowns] save failed: {e}")
 

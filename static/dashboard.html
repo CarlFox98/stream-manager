@@ -110,6 +110,16 @@
         <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/overlays/active/tech-difficulties.html</code><span class="hint">Copy</span></div>
       </div>
     </div>
+
+    <div class="card" style="flex:none">
+      <h3>Stream Manager</h3>
+      <div class="scene-sub" id="lc-sub">Restart re-reads config.json and reconnects to Twitch and OBS. Both controls are local-only &mdash; another device on your network can&rsquo;t use them.</div>
+      <div class="scene-btns">
+        <button class="scene-btn" id="lc-restart" data-act="lc-restart" data-label="Restart">Restart</button>
+        <button class="scene-btn danger" id="lc-shutdown" data-act="lc-shutdown" data-label="Shut Down">Shut Down</button>
+      </div>
+      <div class="scene-msg" id="lc-msg" aria-live="polite"></div>
+    </div>
   </section>
 
   <!-- ── Stream Health ────────────────────────────────────────── -->

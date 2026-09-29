@@ -16,6 +16,7 @@ A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system stat
 - **Real-time** — overlays get effects instantly (long-poll) and the dashboard streams live events (SSE)
 - **Spotify now-playing** — one-click connect, a `!song` command, and a dashboard widget (optional)
 - **One-click Twitch login** — a browser window opens for you to approve; no codes to copy
+- **Start, restart and shut down without a console** — Restart and Shut Down buttons on the dashboard (two clicks, no undo), a system-tray icon that owns the process, and a `prism-ctl` command a Stream Deck key can run. Restarting re-reads `config.json` and reconnects Twitch and OBS without touching the port your browser sources point at
 - **Self-update** — checks GitHub Releases and installs from the dashboard (HTTPS-only, integrity-logged, with a backup first)
 - **Local by default & LAN-safe** — binds to `127.0.0.1`; with `--lan`, controls stay token-locked and you can require a password for remote devices
 
@@ -102,11 +103,42 @@ python stream-manager.py [flags]
 --version           Print the version and exit
 ```
 
+Exit codes matter here: **42** means "restart me". `Start Stream Manager.bat` and the
+tray app both relaunch on 42 and stop on anything else, which is how the Restart
+button works at all. A bare `python stream-manager.py` has nothing listening for
+it, so the dashboard reports that instead of quietly shutting down.
+
+## Starting and stopping
+
+| You want to | Do this |
+|---|---|
+| Start it | `Start Stream Manager.bat` — it relaunches itself on request |
+| Start it with a tray icon | `Stream Manager (Tray).bat` (needs `pip install pystray pillow`) |
+| Restart mid-stream | Dashboard → Overview → **Restart**, the tray menu, or `prism-ctl restart` |
+| Shut it down | Dashboard → **Shut Down**, the tray menu, or `prism-ctl stop` |
+| Put it on a Stream Deck | A **System → Open** key pointing at `prism-ctl.bat` with the argument `restart` |
+
+```
+prism-ctl.bat status | start | restart | stop
+```
+
+`prism-ctl` reads `data/runtime.json` — the port and this run's session token,
+written when the app starts and removed when it stops. That file never leaves
+your disk and `data/` is gitignored; a Stream Deck key needs no credential of
+its own and nothing is added to `.env`.
+
+Restart and Shut Down are **local-only**. They require this run's session token
+*and* a request from `127.0.0.1`, so even in `--lan` mode with the dashboard
+password set, another device on your network can view the dashboard but cannot
+stop the thing running your stream.
+
 ## Security
 
 By default the server only listens on `127.0.0.1` — nothing else on your network can reach the dashboard or its API. Pass `--lan` (or set `"lan": true` in `config.json`) if you want to check the dashboard from your phone or another device on the same network; the startup banner always states plainly which mode is active.
 
 Two things guard it. Every state-changing endpoint requires a session token that is generated fresh each run and compared in constant time, so a web page you happen to visit cannot POST to the dashboard. And in `--lan` mode, setting `SM_DASHBOARD_PASSWORD` requires HTTP Basic auth from any non-localhost client; localhost (OBS on the same PC) is always exempt.
+
+Restart and shutdown get a third gate: the request must come from `127.0.0.1`, whatever the token says. Note that in `--lan` mode *without* `SM_DASHBOARD_PASSWORD`, anyone who can load `/dashboard` can read the session token out of the page — so for every other protected endpoint the token is not doing much there, and the password is what matters. The loopback gate is why restart and shutdown are unaffected either way.
 
 That is enough to keep a stray browser tab or a curious housemate out. It is not hardening for a hostile network: there is no TLS, and without `SM_DASHBOARD_PASSWORD` the `--lan` dashboard is readable by anyone who can reach the port. Only enable `--lan` on networks you trust.
 
@@ -114,4 +146,4 @@ That is enough to keep a stray browser tab or a curious housemate out. It is not
 
 The updater reads GitHub **Releases** (not tags), so a version only reaches anyone once a Release is published for its tag.
 
-The dashboard shows a banner when a newer version is available on GitHub, with a one-click install (your current files are backed up to `.update-backup/` first; restart afterward to apply). Or from the command line: `python stream-manager.py --check-update` / `--update`.
+The dashboard shows a banner when a newer version is available on GitHub, with a one-click install (your current files are backed up to `.update-backup/` first, then hit **Restart** on the Overview tab to apply). Or from the command line: `python stream-manager.py --check-update` / `--update`.

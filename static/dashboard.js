@@ -10,10 +10,16 @@ const fmtNum = n => (Number(n) || 0).toLocaleString();
 
 // ── connection state ────────────────────────────────────────────────
 let online = true;
+// Declared up here, not next to the restart code below: setOnline() reads it,
+// and `typeof` does NOT protect a `let` that hasn't been initialised yet.
+let lcMode = null;   // null | 'restart' | 'shutdown' — set once, never cleared
 function setOnline(v) {
   if (v === online) return;
   online = v;
-  $('#conn-banner')?.classList.toggle('show', !v);
+  // Once a restart or shutdown is under way the banner is saying something more
+  // useful than "connection lost", and the gap is expected — so it keeps the
+  // message lcFire put there instead of being overwritten with a false alarm.
+  if (!lcMode) connBanner(CONN_LOST, !v);
   const pill = $('#conn-pill'); if (pill) pill.classList.toggle('off', !v);
   const t = $('#conn-text'); if (t) t.textContent = v ? 'Live' : 'Offline';
   const d = $('#conn-pill .status-dot'); if (d) d.className = 'status-dot ' + (v ? 'on' : 'off');
@@ -84,7 +90,19 @@ document.addEventListener('keydown', e => {
 
 // ── overview: status ────────────────────────────────────────────────
 let lastLogHead = null;
+let srvStartedAt = 0;
 function renderStatus(s) {
+  // The session token is regenerated on every server start and baked into this
+  // page, so a restart this page did not initiate — from prism-ctl, the Stream
+  // Deck key, the tray menu, or a second dashboard tab — leaves it holding a
+  // dead token. /api/status is a GET and keeps answering, so nothing looked
+  // wrong: the page stayed up and every POST quietly 403'd. started_at is the
+  // only thing that changes, so it is what we watch.
+  const started = Number(s.server && s.server.started_at) || 0;
+  if (started) {
+    if (!srvStartedAt) srvStartedAt = started;
+    else if (started !== srvStartedAt) { location.reload(); return; }
+  }
   lastState = s;
   $('#obs-dot').className = 'status-dot ' + (s.obs.running ? 'on' : 'off');
   $('#obs-label').textContent = s.obs.running ? 'Running' : 'Not running';
@@ -115,6 +133,17 @@ function renderStatus(s) {
   // markup — that one was two releases behind and said so on every page load.
   const vc = $('#ver-chip');
   if (vc && s.server.version) vc.textContent = 'v' + s.server.version;
+
+  // No supervisor means exit code 42 goes nowhere and Restart is really just
+  // Shutdown. Say so on the button rather than finding out by clicking it.
+  const lcR = $('#lc-restart'), lcSub = $('#lc-sub');
+  if (lcR && !lcMode) {
+    const unsup = s.server.supervised === false;
+    lcR.disabled = unsup;
+    lcR.title = unsup ? 'Nothing is supervising this instance' : '';
+    if (lcSub) lcSub.classList.toggle('warn', unsup);
+    if (lcSub && unsup) lcSub.innerHTML = 'Restart needs a supervisor. Launch with <code>Start Stream Manager.bat</code> or the tray app; shut down still works.';
+  }
 
   $('#cpu-pct').textContent = s.system.cpu;
   $('#cpu-bar').style.width = s.system.cpu + '%';
@@ -586,6 +615,90 @@ function switchPreview(name) {
 }
 window.addEventListener('resize', scalePreview);
 
+// ── restart / shutdown ──────────────────────────────────────────────
+// Two clicks to fire, because there is no undo: the second click stops the
+// thing that is currently running your stream.
+const CONN_LOST = 'Connection to Stream Manager lost — retrying…';
+let lcArmed = null, lcArmTimer = null;
+
+function connBanner(msg, show) {
+  const b = $('#conn-banner'); if (!b) return;
+  b.textContent = msg;
+  b.classList.toggle('show', show !== false);
+}
+function lcDisarm() {
+  clearTimeout(lcArmTimer); lcArmTimer = null; lcArmed = null;
+  ['#lc-restart', '#lc-shutdown'].forEach(sel => {
+    const b = $(sel); if (!b) return;
+    b.classList.remove('armed');
+    b.textContent = b.dataset.label || b.textContent;
+  });
+}
+function lcArm(action) {
+  if (lcMode) return;                       // already stopping; ignore further clicks
+  const btn = $(action === 'restart' ? '#lc-restart' : '#lc-shutdown');
+  if (!btn || btn.disabled) return;
+  if (lcArmed !== action) {
+    lcDisarm();
+    lcArmed = action;
+    btn.classList.add('armed');
+    btn.textContent = 'Click again to confirm';
+    lcArmTimer = setTimeout(lcDisarm, 5000);
+    return;
+  }
+  lcDisarm();
+  lcFire(action);
+}
+async function lcFire(action) {
+  // The pid is how we tell "it came back" from "it never left" — the old
+  // process keeps answering for the fraction of a second it takes to flush
+  // this very response.
+  let pidBefore = null;
+  try { pidBefore = (await (await fetch('/api/ping', { cache: 'no-store' })).json()).pid; } catch (e) {}
+
+  // Not bare: lcFire is called un-awaited, so a rejected fetch here used to be
+  // an unhandled promise — lcMode never set, both buttons still live, nothing
+  // on screen, and the server already on its way down. If the request did land,
+  // the started_at watch above reloads the page when it comes back.
+  let r;
+  try {
+    r = await post('/api/lifecycle/' + action, { confirm: true });
+  } catch (e) {
+    toast('Couldn\'t reach Stream Manager — it may be stopping anyway.', 'bad');
+    return;
+  }
+  if (!r.ok || !r.data.ok) {
+    const msg = r.data.error || (action + ' failed');
+    $('#lc-msg').textContent = msg;
+    toast(msg, 'bad');
+    return;
+  }
+  lcMode = action;
+  ['#lc-restart', '#lc-shutdown'].forEach(sel => { const b = $(sel); if (b) b.disabled = true; });
+
+  if (action === 'shutdown') {
+    $('#lc-msg').textContent = '';
+    connBanner('Stream Manager has shut down. Start it again from the launcher.');
+    return;
+  }
+  connBanner('Restarting Stream Manager — this page reloads by itself when it\'s back.');
+  lcWait(pidBefore);
+}
+async function lcWait(pidBefore) {
+  // A reload is not cosmetic: the session token is regenerated every start, so
+  // this page's token is dead the moment the old process exits.
+  let sawGap = false;
+  for (let i = 0; i < 90; i++) {
+    await new Promise(res => setTimeout(res, 1000));
+    let p = null;
+    try { p = await (await fetch('/api/ping', { cache: 'no-store' })).json(); }
+    catch (e) { sawGap = true; continue; }
+    if (!p || !p.pid) { sawGap = true; continue; }
+    if (sawGap || (pidBefore && p.pid !== pidBefore)) { location.reload(); return; }
+  }
+  connBanner('Stream Manager hasn\'t come back — check the launcher window.');
+}
+
 // ── global action delegation ────────────────────────────────────────
 document.addEventListener('click', e => {
   const t = e.target;
@@ -600,7 +713,9 @@ document.addEventListener('click', e => {
   ({ 'update-install': installUpdate, 'ix-auth': ixAuth, 'ix-logout': ixLogout, 'ix-reload': ixReload,
      'cc-add': saveCustom, 'tm-add': addTimerRow, 'tm-save': saveTimers, 'q-add': addQuote,
      'sp-auth': spAuth, 'sp-logout': spLogout,
-     'preflight': runPreflight, 'hm-mute': hmToggleMute }[act.dataset.act] || (() => {}))();
+     'preflight': runPreflight, 'hm-mute': hmToggleMute,
+     'lc-restart': () => lcArm('restart'), 'lc-shutdown': () => lcArm('shutdown')
+   }[act.dataset.act] || (() => {}))();
 });
 document.addEventListener('change', e => {
   const bt = e.target.closest('[data-cmd-toggle]'); if (bt) return toggleCommand(bt.dataset.cmdToggle, e.target.checked);

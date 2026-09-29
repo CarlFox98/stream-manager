@@ -21,6 +21,11 @@ catch { console.log('· dashboard layout test skipped (playwright not installed)
 const REPO = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript' };
 
+// CI images sometimes ship a chromium that doesn't match the pinned playwright.
+// PW_CHROMIUM points at one that does; unset, playwright finds its own.
+const LAUNCH = { args: ['--no-sandbox'] };
+if (process.env.PW_CHROMIUM) LAUNCH.executablePath = process.env.PW_CHROMIUM;
+
 let pass = 0, fail = 0;
 const ok = (c, why) => { if (c) { pass++; console.log('  ok   ' + why); }
                          else { fail++; console.log('  FAIL ' + why); } };
@@ -32,12 +37,19 @@ const STATUS = {
   twitch: { live: false, title: '', game: '', viewers: 0, started_at: '', uptime: '',
             connected: true, display_name: 'NeoTheFox98', profile_image_url: '', view_count: 0 },
   system: { cpu: 5, ram_pct: 40, ram_used_gb: 12, ram_total_gb: 31, gpu: 'Test GPU' },
-  server: { started_at: Date.now() / 1000, uptime: '10s', port: 5000, version: '9.9.9' },
+  server: { started_at: Date.now() / 1000, uptime: '10s', port: 5000, version: '9.9.9',
+            supervised: true },
   scenes: { active_set: 'prism-soft', available: ['prism-soft'] },
   requests: [],
 };
+// Restart/shutdown stub. PID is what tells the page "it came back".
+let PID = 111;
+const TOKEN = 'test-session-token-8f3a';
+const LC = { calls: [], down: false };
+
 const J = {
   '/api/status': () => STATUS,
+  '/api/ping': () => ({ app: 'stream-manager', version: '9.9.9', pid: PID, port: 5000 }),
   '/api/scenes': () => ({ active: 'prism-soft', sets: ['prism-soft'] }),
   '/api/interactive': () => ({ enabled: true, prefix: '!', auth: {}, chat: {}, redeems: {},
                                eventsub: {}, automation: {}, quotes: { count: 0 },
@@ -54,13 +66,43 @@ const J = {
 
 const srv = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
+  if (req.method === 'POST' && u.pathname.startsWith('/api/lifecycle/')) {
+    let raw = '';
+    req.on('data', c => { raw += c; });
+    return req.on('end', () => {
+      const action = u.pathname.split('/').pop();
+      let body = {};
+      try { body = JSON.parse(raw || '{}'); } catch {}
+      LC.calls.push({ action, confirm: body.confirm, token: req.headers['x-sm-token'] });
+      const send = (code, o) => { res.writeHead(code, { 'Content-Type': 'application/json' });
+                                  res.end(JSON.stringify(o)); };
+      if (body.confirm !== true) return send(400, { ok: false, error: 'Confirmation required (confirm: true)' });
+      if (action === 'restart' && STATUS.server.supervised === false)
+        return send(409, { ok: false, error: 'Nothing is supervising this instance, so restarting would just stop it.' });
+      if (action === 'restart') {          // go away, then come back as a new process
+        LC.down = true;
+        setTimeout(() => {
+          LC.down = false; PID = 222;
+          STATUS.server.started_at = Date.now() / 1000;
+        }, 4000);
+      }
+      return send(200, { ok: true, action });
+    });
+  }
   if (u.pathname === '/api/stream') {           // SSE: connect, then stay quiet
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     return res.write(': connected\n\n');
   }
+  if (LC.down) { res.writeHead(503); return res.end('restarting'); }
   const j = J[u.pathname];
   if (j) { const b = JSON.stringify(j());
            res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(b); }
+  if (u.pathname === '/dashboard') {          // substitute the token, as the server does
+    const html = fs.readFileSync(path.join(REPO, 'static/dashboard.html'), 'utf8')
+                   .replace('__SM_TOKEN__', TOKEN);
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    return res.end(html);
+  }
   const file = u.pathname === '/dashboard' ? 'static/dashboard.html'
              : u.pathname.replace(/^\//, '');
   const p = path.join(REPO, file);
@@ -71,7 +113,7 @@ const srv = http.createServer((req, res) => {
 await new Promise(r => srv.listen(0, '127.0.0.1', r));
 const BASE = 'http://127.0.0.1:' + srv.address().port;
 
-const browser = await chromium.launch({ args: ['--no-sandbox'] });
+const browser = await chromium.launch(LAUNCH);
 const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
 const toasts = [];
 page.on('console', () => {});
@@ -122,7 +164,7 @@ await browser.close();
     { id: 'auth', level: 'bad', label: 'Twitch auth', message: 'not authorized (unconfigured)' },
     { id: 'chat', level: 'bad', label: 'Twitch chat', message: 'disconnected' },
   ];
-  const b2 = await chromium.launch({ args: ['--no-sandbox'] });
+  const b2 = await chromium.launch(LAUNCH);
   const p2 = await b2.newPage({ viewport: { width: 1600, height: 900 } });
   await p2.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' });
   await p2.waitForTimeout(1500);
@@ -139,6 +181,105 @@ await browser.close();
   const n2 = await p2.$$eval('.toast', ns => ns.length);
   ok(n2 >= 1, `an alert raised AFTER load still toasts (got ${n2})`);
   await b2.close();
+}
+
+// ── 4. restart / shutdown controls ───────────────────────────────────────
+console.log('\n4. restart and shutdown');
+{
+  STATUS.server.supervised = true;
+  PID = 111; LC.calls.length = 0;
+  const b3 = await chromium.launch(LAUNCH);
+  const p3 = await b3.newPage({ viewport: { width: 1600, height: 900 } });
+  let loads = 0;
+  p3.on('load', () => { loads++; });
+  await p3.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' });
+  await p3.waitForTimeout(900);
+
+  const label = () => p3.$eval('#lc-restart', n => n.textContent.trim());
+
+  // one click arms, it does not fire
+  await p3.click('#lc-restart');
+  await p3.waitForTimeout(150);
+  ok(LC.calls.length === 0, 'one click on Restart sends nothing');
+  ok((await label()) !== 'Restart', `the button asks for confirmation (says "${await label()}")`);
+
+  // and it disarms itself, so a stray click can't sit there waiting to be completed
+  await p3.waitForTimeout(5200);
+  ok((await label()) === 'Restart', 'the armed state expires on its own');
+  ok(LC.calls.length === 0, 'expiring does not fire it either');
+
+  // two clicks fire exactly one request, with confirmation and the token
+  await p3.click('#lc-restart');
+  await p3.waitForTimeout(100);
+  await p3.click('#lc-restart');
+  await p3.waitForTimeout(400);
+  ok(LC.calls.length === 1, `two clicks send exactly one request (got ${LC.calls.length})`);
+  ok(LC.calls[0] && LC.calls[0].confirm === true, 'it carries confirm: true');
+  ok(LC.calls[0] && LC.calls[0].token === TOKEN,
+     'it carries the session token the server baked into the page');
+
+  // Wait until the server has actually gone away and at least one status poll
+  // has failed — that is the moment a "connection lost" message would stomp on
+  // the restart message, and the only moment this can be tested.
+  await p3.waitForTimeout(2600);
+  const banner = await p3.$eval('#conn-banner', n => ({ text: n.textContent, shown: n.classList.contains('show') }));
+  ok(banner.shown && /restart/i.test(banner.text),
+     `the banner says what is happening ("${banner.text.slice(0, 48)}…")`);
+  ok(!/connection to stream manager lost/i.test(banner.text),
+     'it does not report the expected gap as a failure');
+
+  const disabled = await p3.$eval('#lc-shutdown', n => n.disabled);
+  ok(disabled, 'Shut Down is locked out while a restart is in flight');
+
+  // the page reloads itself once the new process answers with a new pid
+  const before = loads;
+  await p3.waitForTimeout(4000);
+  ok(loads > before, `the page reloads when it comes back (loads ${before} -> ${loads})`);
+  await b3.close();
+}
+
+// ── 5. no supervisor: the button must say so, not find out by clicking ───
+console.log('\n5. restart with nothing to restart into');
+{
+  STATUS.server.supervised = false;
+  LC.calls.length = 0;
+  const b4 = await chromium.launch(LAUNCH);
+  const p4 = await b4.newPage({ viewport: { width: 1600, height: 900 } });
+  await p4.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' });
+  await p4.waitForTimeout(1200);
+
+  ok(await p4.$eval('#lc-restart', n => n.disabled), 'Restart is disabled with no supervisor');
+  ok(!(await p4.$eval('#lc-shutdown', n => n.disabled)), 'Shut Down still works');
+  const sub = await p4.$eval('#lc-sub', n => n.textContent);
+  ok(/supervisor/i.test(sub), `and the card explains why ("${sub.slice(0, 48)}…")`);
+  await b4.close();
+  STATUS.server.supervised = true;
+}
+
+// ── 6. a restart this page did not ask for ──────────────────────────────
+// prism-ctl, the Stream Deck key, the tray menu, or a second tab. The token in
+// this page died with the old process; /api/status keeps answering, so the page
+// looks fine while every POST 403s. It has to notice on its own.
+console.log('\n6. a restart from somewhere else');
+{
+  PID = 111; LC.calls.length = 0;
+  STATUS.server.started_at = Date.now() / 1000;
+  const b5 = await chromium.launch(LAUNCH);
+  const p5 = await b5.newPage({ viewport: { width: 1600, height: 900 } });
+  let loads = 0;
+  p5.on('load', () => { loads++; });
+  await p5.goto(BASE + '/dashboard', { waitUntil: 'domcontentloaded' });
+  await p5.waitForTimeout(1200);
+  const before = loads;
+
+  // nothing clicked here — the server simply comes back as a new process
+  STATUS.server.started_at = Date.now() / 1000 + 60;
+  PID = 333;
+  await p5.waitForTimeout(3500);
+
+  ok(loads > before, `the page reloads itself to pick up the new token (loads ${before} -> ${loads})`);
+  ok(LC.calls.length === 0, 'and it did so without sending anything');
+  await b5.close();
 }
 
 srv.close();

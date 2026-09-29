@@ -1,8 +1,8 @@
 """CLI argument parsing and the main entry point / startup banner."""
-import argparse, os, sys, threading, webbrowser
+import argparse, atexit, os, sys, threading, webbrowser
 
 from . import __version__
-from . import obs, system, twitch, updater, health
+from . import obs, system, twitch, updater, health, lifecycle
 from . import chat, redeems, twitch_auth, eventsub, cooldowns, games, stats, timers, spotify, shoutout
 from .config import config, TWITCH_USER, TWITCH_CLIENT_ID, DASHBOARD_PASSWORD
 from .console import style, icon, grad
@@ -24,6 +24,51 @@ def parse_args():
     p.add_argument("--update", action="store_true", help="Check, then (after confirmation) download & install the latest version")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return p.parse_args()
+
+
+def _graceful_stop(server):
+    """Stop the background loops, persist their state, and close the socket.
+
+    Runs on EVERY exit path. This used to live inline in the KeyboardInterrupt
+    handler, which was fine while Ctrl+C was the only way out. Restart and
+    Shutdown are now two clicks away, so any exit path that skipped it would
+    silently drop cooldowns, spin history and session stats — several times a
+    stream instead of once.
+
+    Order matters. The loops are stopped BEFORE the saves, not after: chat,
+    redeems, eventsub and timers all mutate the state being written, and they
+    are daemon threads that otherwise keep running right through the three file
+    writes and up to interpreter death. A !coinflip landing in that window used
+    to be recorded into state that had already been saved, then thrown away.
+
+    Every step is guarded on its own. A failure saving cooldowns must not skip
+    the spin history, and neither must leave the port bound — that is what
+    would greet the relaunch one second later.
+    """
+    for label, stop in (("chat", chat.stop), ("redeems", redeems.stop),
+                        ("eventsub", eventsub.stop), ("timers", timers.stop),
+                        ("health", health.stop)):
+        try:
+            stop()
+        except Exception as e:
+            print(f"  could not stop {label}: {e}")
+
+    for label, save in (("cooldowns", cooldowns.save),
+                        ("spin history", games.save_spin_history),
+                        ("stats", stats.flush)):
+        try:
+            save()
+        except Exception as e:
+            print(f"  could not save {label}: {e}")
+
+    try:
+        lifecycle.clear_runtime()
+    except Exception:
+        pass
+    try:
+        server.server_close()
+    except Exception:
+        pass
 
 
 def main():
@@ -94,6 +139,14 @@ def main():
     # OAuth redirects must match the port we actually bound.
     twitch_auth.set_server_port(PORT)
     spotify.set_server_port(PORT)
+    # Record where we are so prism-ctl (and the Stream Deck key behind it)
+    # can reach this instance. Removed again by _graceful_stop.
+    lifecycle.write_runtime(PORT, server_mod.SESSION_TOKEN)
+    # Belt and braces: _graceful_stop removes this on the ways out we control,
+    # but an exception during the startup below (chat.start, eventsub.start, a
+    # slow device login) happens AFTER the file is written and would otherwise
+    # leave prism-ctl pointing at a process that never finished starting.
+    atexit.register(lifecycle.clear_runtime)
 
     M = style("M", "┃")
     B = style("D", "─")
@@ -236,14 +289,21 @@ def main():
     if not args.no_browser:
         webbrowser.open(f"http://localhost:{PORT}/dashboard")
 
+    action = None
     try:
         while True:
             server.handle_request()
+            action = lifecycle.due()
+            if action:
+                break
     except KeyboardInterrupt:
+        action = "shutdown"
         print(f"\n  {style('Y', 'Shutdown.')}")
-        # persist interactive state so cooldowns/anti-spam/stats survive a restart
-        try:
-            cooldowns.save(); games.save_spin_history(); stats.flush()
-        except Exception:
-            pass
-        server.server_close()
+    finally:
+        # finally, not after the except block: an OSError out of handle_request
+        # used to skip the teardown entirely and leave the port bound.
+        _graceful_stop(server)
+
+    if action == "restart":
+        print(f"  {style('C', 'Restarting…')}")
+    return lifecycle.exit_code(action)

@@ -107,8 +107,10 @@ def save_spin_history():
         with _spin_lock:
             data = {f"{k}|{u}": v for (k, u), v in _spin_history.items()
                     if float(v.get("last_severe_ts") or 0) >= cutoff}
-        with open(_SPIN_FILE, "w", encoding="utf-8") as f:
+        tmp = _SPIN_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f)
+        os.replace(tmp, _SPIN_FILE)
     except Exception as e:
         print(f"[games] spin-history save failed: {e}")
 
