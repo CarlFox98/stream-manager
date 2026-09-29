@@ -27,3 +27,9 @@ server.log
 .twitch_user_token.json
 .spotify_token.json
 data/
+
+# Node dev dependencies. tests/dashboard_layout.mjs needs playwright to drive
+# the dashboard in a real browser; the browsers it downloads live outside the
+# repo. package.json and the lockfile ARE tracked so the setup is
+# reproducible — only the installed tree is ignored.
+node_modules/

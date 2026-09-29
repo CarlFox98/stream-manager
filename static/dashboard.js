@@ -111,6 +111,10 @@ function renderStatus(s) {
 
   $('#server-uptime').textContent = s.server.uptime || '0s';
   $('#server-port').textContent = ':' + s.server.port;
+  // Read the running version rather than trusting a number typed into the
+  // markup — that one was two releases behind and said so on every page load.
+  const vc = $('#ver-chip');
+  if (vc && s.server.version) vc.textContent = 'v' + s.server.version;
 
   $('#cpu-pct').textContent = s.system.cpu;
   $('#cpu-bar').style.width = s.system.cpu + '%';
@@ -606,6 +610,7 @@ document.addEventListener('change', e => {
 
 // ── Stream Health Monitor ───────────────────────────────────────────
 let hmSeen = new Set();        // alert ids we've already toasted
+let hmPrimed = false;          // first sample is a snapshot, not news
 let hmMuted = false;           // audible alerts off?
 try { hmMuted = localStorage.getItem('sm_hm_mute') === '1'; } catch (e) {}
 let hmAudio = null, hmLastBeep = 0;
@@ -665,12 +670,20 @@ function renderMonitor(d) {
 
   // toast + beep on newly raised alerts
   const ids = new Set(alerts.map(a => a.id));
-  alerts.forEach(a => {
-    if (hmSeen.has(a.id)) return;
-    toast((a.level === 'bad' ? '⚠ ' : '') + a.message, a.level === 'bad' ? 'err' : '');
-    if (a.level === 'bad') hmBeep();
-  });
-  hmSeen.forEach(id => { if (!ids.has(id)) toast('Recovered: ' + id, 'ok'); });
+  if (hmPrimed) {
+    alerts.forEach(a => {
+      if (hmSeen.has(a.id)) return;
+      toast((a.level === 'bad' ? '⚠ ' : '') + a.message, a.level === 'bad' ? 'err' : '');
+      if (a.level === 'bad') hmBeep();
+    });
+    hmSeen.forEach(id => { if (!ids.has(id)) toast('Recovered: ' + id, 'ok'); });
+  } else {
+    // The first sample after a page load reports what is ALREADY wrong, which
+    // is not news — it is the current state. Without this, opening or
+    // refreshing the dashboard while any alert is live toasts every one of
+    // them at once and beeps for each bad one. Take it as the baseline.
+    hmPrimed = true;
+  }
   hmSeen = ids;
 
   if (!$('#tab-health')?.classList.contains('active')) return;   // panel hidden

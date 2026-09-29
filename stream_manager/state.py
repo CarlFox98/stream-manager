@@ -1,6 +1,7 @@
 """Shared in-memory app state and the background polling loop."""
 import threading, time
 
+from . import __version__
 from .config import config
 from .obs import get_obs_status
 from .system import get_system_stats
@@ -12,7 +13,12 @@ state = {
     "twitch": {"live": False, "title": "", "game": "", "viewers": 0, "started_at": "", "uptime": "", "connected": False,
                "display_name": "", "profile_image_url": "", "view_count": 0},
     "system": {"cpu": 0, "ram_pct": 0, "ram_used_gb": 0, "ram_total_gb": 0, "gpu": ""},
-    "server": {"started_at": time.time(), "uptime": "", "port": 5000},
+    # `version` rides along on /api/status, which the dashboard already polls
+    # every 2s — the chip used to be hardcoded in dashboard.html and sat two
+    # releases stale, which is exactly the thing you want to glance at after
+    # an update.
+    "server": {"started_at": time.time(), "uptime": "", "port": 5000,
+               "version": __version__},
     "scenes": {"active_set": None, "available": []},
     "requests": []
 }

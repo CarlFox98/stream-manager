@@ -297,7 +297,9 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, .url-item:focus
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* ── Connection banner ───────────────────────────────────────────────── */
-.conn-banner { position: sticky; top: 0; z-index: 40; display: none;
+/* Same bug, same fix — this one only shows when the connection drops, which is
+   why it was never noticed. Fixing one without the other just hides it again. */
+.conn-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 40; display: none;
   text-align: center; font-size: 13px; font-weight: 600; color: #241a00;
   background: var(--grad-warm); padding: 10px; border-radius: 0 0 12px 12px; }
 .conn-banner.show { display: block; }
@@ -423,7 +425,11 @@ textarea.field { min-height: 120px; resize: vertical; font-family: 'JetBrains Mo
 }
 
 /* ── Stream Health Monitor ───────────────────────────────────────────── */
-.health-banner { position: sticky; top: 0; z-index: 50; display: none;
+/* fixed, not sticky: <body> is a flex ROW, so a visible in-flow banner became
+   a flex item — a full-height column painted beside the sidebar instead of a
+   bar across the top. The rounded bottom corners below always intended a bar
+   hanging off the top edge; sticky never took it out of the row. */
+.health-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 50; display: none;
   text-align: center; font-size: 13.5px; font-weight: 700; color: #2a0009;
   background: linear-gradient(135deg, #ff7a90, #ffb36b);
   padding: 11px 14px; border-radius: 0 0 12px 12px;

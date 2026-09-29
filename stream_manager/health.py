@@ -52,6 +52,7 @@ DEFAULTS = {
     "mic_input": "Mic/Aux",       # OBS input name to watch
     "overlay_stale_sec": 90,      # an overlay that polled before but went quiet
     "token_warn_sec": 900,        # warn when the Twitch token expires within this
+    "startup_grace_sec": 45,      # auth/chat are allowed to still be connecting
 }
 
 
@@ -74,6 +75,23 @@ def _pct(part, total):
         return (float(part) / float(total)) * 100.0 if total else 0.0
     except Exception:
         return 0.0
+
+
+def _starting_up():
+    """True during the first seconds after launch.
+
+    Twitch auth loads its token and the IRC client completes CAP + JOIN a moment
+    after the process starts, so a sample taken immediately finds both down.
+    Reporting those as `bad` turns an ordinary startup into two raised alerts —
+    a log entry, a banner, a toast and a beep — on every single launch, which is
+    how you learn to ignore the banner on the launch that matters.
+    """
+    from .state import state
+    try:
+        started = float(state["server"]["started_at"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (time.time() - started) < float(cfg("startup_grace_sec"))
 
 
 def _chk(cid, label, status, message, value=None, unit=""):
@@ -325,13 +343,20 @@ def _integration_checks(checks, metrics):
         checks.append(_chk("auth", "Twitch auth", lvl,
                            "token expires soon — it will auto-refresh" if lvl == "warn" else "authorized"))
     else:
-        checks.append(_chk("auth", "Twitch auth", "bad" if interactive else "warn",
-                           a.get("error") or f"not authorized ({a.get('status')})"))
+        starting = _starting_up()
+        checks.append(_chk("auth", "Twitch auth",
+                           "warn" if (starting or not interactive) else "bad",
+                           "authorizing — Stream Manager just started" if starting
+                           else (a.get("error") or f"not authorized ({a.get('status')})")))
 
     if interactive:
-        checks.append(_chk("chat", "Twitch chat", "ok" if chat.status.get("connected") else "bad",
-                           "connected" if chat.status.get("connected")
-                           else (chat.status.get("error") or "disconnected")))
+        connected = chat.status.get("connected")
+        starting = _starting_up()
+        checks.append(_chk("chat", "Twitch chat",
+                           "ok" if connected else ("warn" if starting else "bad"),
+                           "connected" if connected
+                           else ("connecting — Stream Manager just started" if starting
+                                 else (chat.status.get("error") or "disconnected"))))
         r = redeems.public_status()
         checks.append(_chk("redeems", "Channel-point redeems", "ok" if r.get("ready") else "warn",
                            "ready" if r.get("ready") else (r.get("error") or "setting up")))

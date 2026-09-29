@@ -1,0 +1,11 @@
+{
+  "name": "stream-manager-dev",
+  "private": true,
+  "description": "Dev tooling only. Stream Manager itself is Python; this exists so the dashboard's browser tests can pin playwright. The release version lives in stream_manager/__init__.py.",
+  "scripts": {
+    "test:dashboard": "node tests/dashboard_layout.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
+  }
+}

@@ -28,3 +28,20 @@ jobs:
         run: ruff check .
       - name: Tests
         run: python -m pytest -q
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # The dashboard had no browser coverage, which is how a banner that
+      # renders as a full-height column beside the sidebar shipped: it only
+      # appears while an alert is live. The script skips without playwright,
+      # so chromium is installed here deliberately to make it actually run.
+      - name: Dashboard layout and alert-noise test
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+          node tests/dashboard_layout.mjs
