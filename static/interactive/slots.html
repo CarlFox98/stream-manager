@@ -6,7 +6,7 @@
 <!-- PRISM slot-machine overlay. OBS Browser Source, 1920x1080, transparent.
      Poll source: GET /api/effects/slots?since=<id>.  Test: ?demo -->
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@700&display=swap');
+@import url('/overlays/PRISM/fonts/prism-fonts.css');   /* vendored — no network at load */
 :root{ --ink:#EAF0FF; --ink-soft:#A9B4D6; --glass:rgba(14,16,28,0.46); --glass-deep:rgba(10,12,22,0.72);
   --c1:#57F2E4; --c2:#6C8BFF; --c3:#B983FF; --c4:#FF7ACb; --c5:#FFD86B; }
 *{ margin:0; padding:0; box-sizing:border-box; }
@@ -48,8 +48,31 @@ html,body{ width:100%; height:100%; overflow:hidden; background:transparent;
 @keyframes shimmer{ 0%{background-position:0% 0%} 100%{background-position:250% 0%} }
 @keyframes blip{ 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.8)} }
 </style>
+<!-- Set theme: follows the set chosen in the Stream Manager dashboard, exactly
+     like shoutout.html. Every set ships redeem-theme.css (holo's is empty, which
+     leaves the built-in look); it is re-read every 60s so a set switch restyles
+     this source without an OBS refresh. A failed load keeps the current theme.
+     ?theme=<url> overrides it for previewing. -->
+<link rel="stylesheet" id="prism-theme" href="/overlays/active/redeem-theme.css">
+<script data-prism-theme>
+(function(){
+  var q = new URLSearchParams(location.search).get('theme');
+  var BASE = q || '/overlays/active/redeem-theme.css';
+  var cur = document.getElementById('prism-theme');
+  function fresh(){ return BASE + (BASE.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now(); }
+  cur.href = fresh();   /* never trust a cached copy from before a set switch */
+  function swap(){
+    var n = document.createElement('link');
+    n.rel = 'stylesheet'; n.href = fresh();
+    n.onload = function(){ if (cur && cur.parentNode) cur.parentNode.removeChild(cur); cur = n; };
+    n.onerror = function(){ if (n.parentNode) n.parentNode.removeChild(n); };
+    document.head.appendChild(n);
+  }
+  setInterval(swap, 60000);
+})();
+</script>
 </head>
-<body>
+<body class="ov ov-slots">
 <div class="stage">
   <div class="card" id="card"><div class="inner">
     <div class="eyebrow"><span class="dot"></span>Slot Machine</div>

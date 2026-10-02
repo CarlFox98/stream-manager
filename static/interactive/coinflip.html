@@ -18,7 +18,7 @@
    Test layout with ?demo on the URL.
    ============================================================ -->
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@600;700&display=swap');
+@import url('/overlays/PRISM/fonts/prism-fonts.css');   /* vendored — no network at load */
 :root{
   --ink:#EAF0FF; --ink-soft:#A9B4D6;
   --glass:rgba(14,16,28,0.46); --glass-deep:rgba(10,12,22,0.72);
@@ -98,8 +98,31 @@ html,body{ width:100%; height:100%; overflow:hidden; background:transparent;
 @media (prefers-reduced-motion: reduce){
   .card,.face,.who{ animation:none !important; } .coin.flipping{ animation-duration:0.6s !important; } }
 </style>
+<!-- Set theme: follows the set chosen in the Stream Manager dashboard, exactly
+     like shoutout.html. Every set ships redeem-theme.css (holo's is empty, which
+     leaves the built-in look); it is re-read every 60s so a set switch restyles
+     this source without an OBS refresh. A failed load keeps the current theme.
+     ?theme=<url> overrides it for previewing. -->
+<link rel="stylesheet" id="prism-theme" href="/overlays/active/redeem-theme.css">
+<script data-prism-theme>
+(function(){
+  var q = new URLSearchParams(location.search).get('theme');
+  var BASE = q || '/overlays/active/redeem-theme.css';
+  var cur = document.getElementById('prism-theme');
+  function fresh(){ return BASE + (BASE.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now(); }
+  cur.href = fresh();   /* never trust a cached copy from before a set switch */
+  function swap(){
+    var n = document.createElement('link');
+    n.rel = 'stylesheet'; n.href = fresh();
+    n.onload = function(){ if (cur && cur.parentNode) cur.parentNode.removeChild(cur); cur = n; };
+    n.onerror = function(){ if (n.parentNode) n.parentNode.removeChild(n); };
+    document.head.appendChild(n);
+  }
+  setInterval(swap, 60000);
+})();
+</script>
 </head>
-<body>
+<body class="ov ov-coinflip">
 <div class="stage">
   <div class="card" id="card">
     <div class="card-inner">
@@ -132,7 +155,7 @@ html,body{ width:100%; height:100%; overflow:hidden; background:transparent;
       var is5050 = d.type==="5050";
       var out = d.result || (Math.random()<0.5?"HEADS":"TAILS");
       front.textContent = out; back.textContent = out;   // whichever face lands reads right
-      card.classList.remove("lose");
+      card.classList.remove("lose"); card.classList.toggle("is5050", is5050);
       if(is5050 && !d.win) card.classList.add("lose");
       eyebrow.textContent = is5050 ? "50 / 50" : "Coin Flip";
 

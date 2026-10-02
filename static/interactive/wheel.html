@@ -19,7 +19,7 @@
    Test layout with ?demo=lucky  or  ?demo=risky  on the URL.
    ============================================================ -->
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@600;700&display=swap');
+@import url('/overlays/PRISM/fonts/prism-fonts.css');   /* vendored — no network at load */
 :root{
   --ink:#EAF0FF; --ink-soft:#A9B4D6;
   --glass:rgba(14,16,28,0.46); --glass-deep:rgba(10,12,22,0.72);
@@ -93,8 +93,31 @@ canvas{ position:absolute; inset:0; width:100%; height:100%;
 @keyframes blip{ 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(0.8)} }
 @media (prefers-reduced-motion: reduce){ .card,.hub,.winner .label,.winner .who{ animation:none !important; } }
 </style>
+<!-- Set theme: follows the set chosen in the Stream Manager dashboard, exactly
+     like shoutout.html. Every set ships redeem-theme.css (holo's is empty, which
+     leaves the built-in look); it is re-read every 60s so a set switch restyles
+     this source without an OBS refresh. A failed load keeps the current theme.
+     ?theme=<url> overrides it for previewing. -->
+<link rel="stylesheet" id="prism-theme" href="/overlays/active/redeem-theme.css">
+<script data-prism-theme>
+(function(){
+  var q = new URLSearchParams(location.search).get('theme');
+  var BASE = q || '/overlays/active/redeem-theme.css';
+  var cur = document.getElementById('prism-theme');
+  function fresh(){ return BASE + (BASE.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now(); }
+  cur.href = fresh();   /* never trust a cached copy from before a set switch */
+  function swap(){
+    var n = document.createElement('link');
+    n.rel = 'stylesheet'; n.href = fresh();
+    n.onload = function(){ if (cur && cur.parentNode) cur.parentNode.removeChild(cur); cur = n; };
+    n.onerror = function(){ if (n.parentNode) n.parentNode.removeChild(n); };
+    document.head.appendChild(n);
+  }
+  setInterval(swap, 60000);
+})();
+</script>
 </head>
-<body>
+<body class="ov ov-wheel">
 <div class="stage">
   <div class="card" id="card">
     <div class="card-inner">
@@ -126,14 +149,50 @@ canvas{ position:absolute; inset:0; width:100%; height:100%;
       pointer=document.getElementById("pointer"), root=document.documentElement;
   var TAU=Math.PI*2, R=cv.width/2;
 
+  /* The wheel is drawn on a canvas, which CSS cannot reach — so the set theme
+     hands its look over as custom properties and draw() reads them each spin.
+     All optional: with none set (holo) the wheel draws exactly as before. */
+  var HOLO_PALETTE=["#57F2E4","#6C8BFF","#B983FF","#FF7ACB","#FFD86B",
+                    "#7DE8FF","#9E7BFF","#FF9EDB","#7CFBE0","#8AA6FF"];   /* games.py _PALETTE */
+  var HOLO_ACCENT={lucky:"#57F2E4",risky:"#FF7ACB"};
+  var T={};
+  function tok(name){ return getComputedStyle(root).getPropertyValue(name).trim(); }
+  function readTheme(){
+    var pal=tok("--wheel-palette");
+    T={ style: tok("--wheel-style")||"radial",          /* radial | flat | hud */
+        font: tok("--wheel-font")||"'Space Grotesk',sans-serif",
+        weight: tok("--wheel-weight")||"600",
+        ink: tok("--wheel-ink")||"#0b0e18",
+        stroke: tok("--wheel-stroke")||"rgba(9,11,20,0.85)",
+        strokeW: parseFloat(tok("--wheel-stroke-w"))||3,
+        ring: tok("--wheel-ring")||"rgba(120,150,255,0.35)",
+        ringW: parseFloat(tok("--wheel-ring-w"))||10,
+        hudFill: tok("--wheel-hud-fill")||"#06161A",
+        upper: tok("--wheel-case")==="upper",
+        palette: pal ? pal.split(",").map(function(c){ return c.trim(); }).filter(Boolean) : null,
+        lucky: tok("--wheel-lucky"), risky: tok("--wheel-risky") };
+  }
+  /* A theme palette replaces only the default colours games.py fills in — a
+     colour set by hand on a segment in config.json is always kept. */
+  function segColor(seg, i){
+    var c=(seg.color||"").toUpperCase();
+    if(T.palette && (!c || HOLO_PALETTE.indexOf(c)>=0)) return T.palette[i%T.palette.length];
+    return seg.color||"#6C8BFF";
+  }
+  function accentFor(d){
+    var c=(d.color||"").toUpperCase(), m=d.mode;
+    if((m==="lucky"||m==="risky") && T[m] && (!c || c===HOLO_ACCENT[m])) return T[m];
+    return d.color||"#57F2E4";
+  }
+
   function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
   function easeOutCubic(t){ return 1-Math.pow(1-t,3); }
 
   // fit a label to the wedge: shrink, then ellipsis
   function fitLabel(label, maxW){
     var size=34;
-    while(size>16){ ctx.font="600 "+size+"px 'Space Grotesk',sans-serif"; if(ctx.measureText(label).width<=maxW) return {text:label,size:size}; size-=2; }
-    ctx.font="600 16px 'Space Grotesk',sans-serif";
+    while(size>16){ ctx.font=T.weight+" "+size+"px "+T.font; if(ctx.measureText(label).width<=maxW) return {text:label,size:size}; size-=2; }
+    ctx.font=T.weight+" 16px "+T.font;
     var t=label;
     while(t.length>1 && ctx.measureText(t+"…").width>maxW) t=t.slice(0,-1);
     return {text:(t===label?t:t+"…"), size:16};
@@ -145,24 +204,30 @@ canvas{ position:absolute; inset:0; width:100%; height:100%;
     for(var i=0;i<n;i++){
       var a0=rot+i*seg, a1=a0+seg;
       ctx.beginPath(); ctx.moveTo(R,R); ctx.arc(R,R,R-8,a0,a1); ctx.closePath();
-      var col=segs[i].color||"#6C8BFF";
-      var g=ctx.createRadialGradient(R,R,40,R,R,R);
-      g.addColorStop(0, shade(col,0.28)); g.addColorStop(1, col);
-      ctx.fillStyle=g; ctx.fill();
-      ctx.lineWidth=3; ctx.strokeStyle="rgba(9,11,20,0.85)"; ctx.stroke();
+      var col=segColor(segs[i], i);
+      if(T.style==="flat"){ ctx.fillStyle=col; }
+      else if(T.style==="hud"){ ctx.fillStyle=(i%2)?T.hudFill:shade(T.hudFill,0.06); }
+      else { var g=ctx.createRadialGradient(R,R,40,R,R,R);
+        g.addColorStop(0, shade(col,0.28)); g.addColorStop(1, col); ctx.fillStyle=g; }
+      ctx.fill();
+      ctx.lineWidth=T.strokeW; ctx.strokeStyle=T.stroke; ctx.stroke();
+      if(T.style==="hud"){   // a lit arc on the rim in the segment's colour
+        ctx.beginPath(); ctx.arc(R,R,R-30,a0+0.02,a1-0.02); ctx.lineWidth=14; ctx.strokeStyle=col; ctx.stroke(); }
       // label
       ctx.save();
       ctx.translate(R,R); ctx.rotate(a0+seg/2);
-      ctx.textAlign="right"; ctx.textBaseline="middle"; ctx.fillStyle="#0b0e18";
-      var maxW=R-140, f=fitLabel(segs[i].label||"", maxW);
-      ctx.font="600 "+f.size+"px 'Space Grotesk',sans-serif";
-      ctx.shadowColor="rgba(255,255,255,0.35)"; ctx.shadowBlur=2;
-      ctx.fillText(f.text, R-46, 0);
+      ctx.textAlign="right"; ctx.textBaseline="middle";
+      ctx.fillStyle = T.style==="hud" ? col : T.ink;
+      var raw=segs[i].label||""; if(T.upper) raw=raw.toUpperCase();
+      var maxW=R-140, f=fitLabel(raw, maxW);
+      ctx.font=T.weight+" "+f.size+"px "+T.font;
+      if(T.style==="radial"){ ctx.shadowColor="rgba(255,255,255,0.35)"; ctx.shadowBlur=2; }
+      ctx.fillText(f.text, T.style==="hud"?R-60:R-46, 0);
       ctx.restore();
     }
     // outer ring
-    ctx.beginPath(); ctx.arc(R,R,R-6,0,TAU); ctx.lineWidth=10;
-    ctx.strokeStyle="rgba(120,150,255,0.35)"; ctx.stroke();
+    ctx.beginPath(); ctx.arc(R,R,R-T.ringW/2-1,0,TAU); ctx.lineWidth=T.ringW;
+    ctx.strokeStyle=T.ring; ctx.stroke();
   }
   function shade(hex,amt){ // lighten toward white by amt (0..1)
     var m=/^#?([0-9a-f]{6})$/i.exec(hex); if(!m) return hex;
@@ -191,13 +256,21 @@ canvas{ position:absolute; inset:0; width:100%; height:100%;
   function play(d){
     return new Promise(function(res){
       var segs=d.segments||[], win=(typeof d.winner_index==="number")?d.winner_index:0;
-      var accent=d.color||"#57F2E4";
+      readTheme();
+      var accent=accentFor(d);
       root.style.setProperty("--accent", accent);
+      card.classList.toggle("risky", d.mode==="risky");
       titleEl.textContent=d.title||"Wheel";
       eyebrow.textContent = d.mode==="risky" ? "Risky Spin" : (d.mode==="lucky" ? "Lucky Spin" : "Wheel of Fate");
       glyph.textContent = d.mode==="risky" ? "☠️" : "🍀";
       winner.classList.remove("in"); wlabel.textContent=""; who.style.display="none";
-      draw(segs, 0);
+      /* a canvas never triggers a webfont download by itself — ask for it, but
+         never let a font that will not load hold up the spin */
+      var fontReady = (document.fonts && document.fonts.load)
+        ? Promise.race([document.fonts.load(T.weight+" 34px "+T.font).catch(function(){}),
+                        new Promise(function(r){ setTimeout(r, 400); })])
+        : Promise.resolve();
+      fontReady.then(function(){ draw(segs, 0); });
       card.classList.add("show");
       setTimeout(function(){
         spinTo(segs, win).then(function(){
@@ -222,6 +295,7 @@ canvas{ position:absolute; inset:0; width:100%; height:100%;
       .finally(function(){ setTimeout(poll, POLL_MS); });
   }
 
+  readTheme();
   var demo=new URLSearchParams(location.search).get("demo");
   if(demo){
     var pal=["#57F2E4","#6C8BFF","#B983FF","#FF7ACb","#FFD86B","#7DE8FF"];
