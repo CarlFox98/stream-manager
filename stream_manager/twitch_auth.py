@@ -30,6 +30,11 @@ from .config import BASE_DIR, TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET, TWITCH_USE
 #   moderator:manage:shoutouts         → automated shoutout outcome
 #   moderator:read:followers           → read the follower list/total (PRISM's
 #                                        refresh-followers writes prism-followers.json)
+#   channel:manage:polls               → Lucky: "Chat picks the next game"
+#   channel:manage:predictions         → Risky: "Chat bets"
+#   moderator:manage:chat_settings     → Lucky: Emote party · Risky: Slow mode
+#   moderator:manage:announcements     → VIP / JACKPOT announcements
+#   moderation:read                    → never VIP or time out a moderator
 SCOPES = [
     "chat:read",
     "chat:edit",
@@ -41,6 +46,11 @@ SCOPES = [
     "moderator:manage:banned_users",
     "moderator:manage:shoutouts",
     "moderator:read:followers",
+    "channel:manage:polls",
+    "channel:manage:predictions",
+    "moderator:manage:chat_settings",
+    "moderator:manage:announcements",
+    "moderation:read",
 ]
 
 TOKEN_FILE = os.path.join(BASE_DIR, ".twitch_user_token.json")

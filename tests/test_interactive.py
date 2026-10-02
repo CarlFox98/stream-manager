@@ -160,13 +160,16 @@ def test_handle_redemption_fulfill_refund_backlog(monkeypatch):
     assert patched == []
 
     # success -> FULFILLED
-    monkeypatch.setattr(games, "run_action", lambda a, user="", say=None, user_id="": "HEADS")
+    def ok_action(a, user="", say=None, user_id="", login="", on_fail=None, on_ok=None):
+        on_ok and on_ok()
+        return "HEADS"
+    monkeypatch.setattr(games, "run_action", ok_action)
     redeems._seen.clear(); patched.clear()
     redeems.handle_redemption("rw", {"id": "n1", "user_name": "a"})
     assert patched == ["FULFILLED"]
 
     # failure + refund_on_failure -> CANCELED
-    monkeypatch.setattr(games, "run_action", lambda a, user="", say=None, user_id="": None)
+    monkeypatch.setattr(games, "run_action", lambda a, user="", say=None, user_id="", **kw: None)
     redeems._seen.clear(); patched.clear()
     redeems.handle_redemption("rw", {"id": "n2", "user_name": "a"})
     assert patched == ["CANCELED"]

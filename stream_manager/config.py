@@ -54,6 +54,20 @@ CONFIG_DEFAULTS = {
     "shoutout": {},
     # Stream Health Monitor thresholds + alerting — see health.py.
     "health": {},
+    # Wheel outcome tuning (durations, poll/prediction titles, DJ rules) — see
+    # outcomes.py. Leave {} for the built-in defaults.
+    "outcomes": {},
+    # The ONE OBS source wheel effects may touch, and the scene it lives in —
+    # see obs_control.py. {"enabled", "source", "scene"}.
+    "obs_effects": {},
+    # Steam library for "Chat picks the next game": optional "path", plus
+    # "pinned" / "hidden" appid lists managed from the dashboard.
+    "steam": {},
+    # Featured Viewers on Starting Soon: {"slots": 3}.
+    "featured": {},
+    # Chat overlay extras: third-party emotes (7TV/BTTV/FFZ) and inline
+    # sub/raid/cheer cards — see chatfeed.py.
+    "chat": {},
 }
 
 
@@ -74,7 +88,9 @@ def _load_config():
                      ("wheels", dict), ("redeems", dict), ("cooldowns", dict),
                      ("automation", dict), ("eventsub", dict),
                      ("commands", dict), ("timers", dict), ("spotify", dict),
-                     ("alerts", dict), ("shoutout", dict), ("health", dict)]:
+                     ("alerts", dict), ("shoutout", dict), ("health", dict),
+                     ("outcomes", dict), ("obs_effects", dict), ("steam", dict),
+                     ("featured", dict), ("chat", dict)]:
         if not isinstance(config.get(key), typ):
             print(f"[config] {key} must be {typ}, got {type(config.get(key)).__name__}, using default {CONFIG_DEFAULTS[key]}")
             config[key] = CONFIG_DEFAULTS[key]
@@ -100,7 +116,8 @@ def reload():
     """
     fresh = _load_config()
     hot_keys = ("interactive_enabled", "command_prefix", "redeem_poll_interval",
-                "wheels", "redeems", "cooldowns", "poll_interval")
+                "wheels", "redeems", "cooldowns", "poll_interval",
+                "outcomes", "obs_effects", "steam", "featured", "chat")
     for k in hot_keys:
         if k in fresh:
             config[k] = fresh[k]

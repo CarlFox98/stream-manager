@@ -2,8 +2,9 @@
 
 Uses Spotify's Authorization Code flow with a local ``/auth/spotify/callback``
 redirect (one-click, same UX as the Twitch login). Works with a Confidential
-app (client secret) or a Public app (PKCE). Only read scopes are requested; we
-never control playback.
+app (client secret) or a Public app (PKCE). Read scopes, plus
+user-modify-playback-state for exactly one write: adding a track to the queue
+(the Lucky Wheel's "DJ for a song"). Nothing here skips, pauses or seeks.
 
 Setup: create an app at https://developer.spotify.com/dashboard, add the
 redirect URL the dashboard shows, and put SPOTIFY_CLIENT_ID (and optionally
@@ -13,7 +14,7 @@ import base64, hashlib, json, os, secrets, threading, time, urllib.error, urllib
 
 from .config import BASE_DIR, SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET
 
-SCOPES = ["user-read-currently-playing", "user-read-playback-state"]
+SCOPES = ["user-read-currently-playing", "user-read-playback-state", "user-modify-playback-state"]
 TOKEN_FILE = os.path.join(BASE_DIR, ".spotify_token.json")
 CALLBACK_PATH = "/auth/spotify/callback"
 
@@ -237,6 +238,76 @@ def now_playing():
         "artist": artists,
         "url": (item.get("external_urls") or {}).get("spotify", ""),
     }
+
+
+# ── queueing (Lucky Wheel: DJ for a song) ───────────────────────────────────
+_API = "https://api.spotify.com/v1"
+_TRACK_RE = __import__("re").compile(
+    r"(?:open\.spotify\.com/(?:intl-[a-z]{2}(?:-[a-z]{2})?/)?track/|spotify:track:)([A-Za-z0-9]{22})")
+
+
+def parse_track_id(text):
+    """The track id from a Spotify link or URI in a chat line, or None.
+    Albums, playlists, episodes and artists are rejected — only tracks queue."""
+    m = _TRACK_RE.search(text or "")
+    return m.group(1) if m else None
+
+
+def _api(method, path, params=None):
+    token = _token()
+    if not token:
+        return 0, {}
+    url = _API + path + ("?" + urllib.parse.urlencode(params) if params else "")
+    req = urllib.request.Request(url, method=method, data=b"" if method == "POST" else None,
+                                 headers={"Authorization": "Bearer " + token})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            raw = r.read()
+            return r.status, (json.loads(raw) if raw else {})
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read() or b"{}")
+        except Exception:
+            return e.code, {}
+    except Exception as e:
+        return 0, {"_error": str(e)}
+
+
+def track(track_id):
+    """{"id","title","artist","explicit","duration_ms","uri"} or None."""
+    code, body = _api("GET", f"/tracks/{track_id}")
+    if code != 200 or not body.get("id"):
+        return None
+    return {
+        "id": body["id"], "uri": body.get("uri") or f"spotify:track:{body['id']}",
+        "title": body.get("name", ""),
+        "artist": ", ".join(a.get("name", "") for a in body.get("artists", []) if a.get("name")),
+        "explicit": bool(body.get("explicit")), "duration_ms": int(body.get("duration_ms") or 0),
+    }
+
+
+def has_active_device():
+    """True if Spotify is open somewhere that can take a queued track."""
+    code, body = _api("GET", "/me/player")
+    return code == 200 and bool((body.get("device") or {}).get("id"))
+
+
+def queue_track(uri):
+    """(ok, reason). Needs Premium and an active device."""
+    code, body = _api("POST", "/me/player/queue", {"uri": uri})
+    if code in (200, 202, 204):
+        return True, ""
+    if code == 403:
+        return False, "Spotify refused the queue (Premium required, or re-connect Spotify on the dashboard)"
+    if code == 404:
+        return False, "Spotify isn't playing on any device right now"
+    if code == 401:
+        return False, "Spotify login expired — reconnect it on the dashboard"
+    return False, f"Spotify error {code}" if code else "Spotify unreachable"
+
+
+def connected():
+    return auth["status"] == "ok"
 
 
 def song_line():

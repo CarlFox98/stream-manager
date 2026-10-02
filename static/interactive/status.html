@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PRISM — Active Effects</title>
+<!-- ============================================================
+   PRISM — Active wheel effects (status chips with countdowns)
+   "Silly voice 4:12", "Upside-down 0:41", "Emote-only 1:30"… so chat can
+   see what's active and for how long. Hidden when nothing is.
+   OBS Browser Source, 1920x1080, transparent, in the PRISM Interactive
+   Overlays group. Data: GET /api/timed (short effects only).
+   Preview with ?demo.
+   ============================================================ -->
+<style>
+@import url('/overlays/PRISM/fonts/prism-fonts.css');   /* vendored — no network at load */
+:root{
+  --ink:#EAF0FF; --ink-soft:#A9B4D6; --glass-deep:rgba(10,12,22,0.78);
+  --c1:#57F2E4; --c2:#6C8BFF; --c3:#B983FF; --c4:#FF7ACb; --c5:#FFD86B;
+}
+*{ margin:0; padding:0; box-sizing:border-box; }
+html,body{ width:100%; height:100%; overflow:hidden; background:transparent;
+  font-family:'Space Grotesk','Segoe UI',Arial,sans-serif; -webkit-font-smoothing:antialiased; }
+.chips{ position:absolute; top:40px; left:50%; transform:translateX(-50%); display:flex; gap:14px; }
+.chip{ display:inline-flex; align-items:center; gap:12px; padding:10px 22px; border-radius:999px;
+  border:1.5px solid transparent; font-size:24px; font-weight:700; color:var(--ink);
+  background:linear-gradient(var(--glass-deep),var(--glass-deep)) padding-box,
+    linear-gradient(120deg,var(--c1),var(--c3),var(--c4)) border-box;
+  box-shadow:0 12px 30px rgba(0,0,0,0.45); animation:chipIn .45s cubic-bezier(.16,1,.3,1) backwards; }
+.chip .t{ font-family:'JetBrains Mono',monospace; color:var(--c1); font-variant-numeric:tabular-nums; }
+.chip.ending .t{ color:var(--c4); }
+@keyframes chipIn{ from{ opacity:0; transform:translateY(-14px); } }
+@media (prefers-reduced-motion: reduce){ .chip{ animation:none; } }
+</style>
+<!-- Set theme: follows the set chosen in the Stream Manager dashboard, exactly
+     like shoutout.html. Every set ships redeem-theme.css (holo's is empty, which
+     leaves the built-in look); it is re-read every 60s so a set switch restyles
+     this source without an OBS refresh. A failed load keeps the current theme.
+     ?theme=<url> overrides it for previewing. -->
+<link rel="stylesheet" id="prism-theme" href="/overlays/active/redeem-theme.css">
+<script data-prism-theme>
+(function(){
+  var q = new URLSearchParams(location.search).get('theme');
+  var BASE = q || '/overlays/active/redeem-theme.css';
+  var cur = document.getElementById('prism-theme');
+  function fresh(){ return BASE + (BASE.indexOf('?') < 0 ? '?' : '&') + 't=' + Date.now(); }
+  cur.href = fresh();   /* never trust a cached copy from before a set switch */
+  function swap(){
+    var n = document.createElement('link');
+    n.rel = 'stylesheet'; n.href = fresh();
+    n.onload = function(){ if (cur && cur.parentNode) cur.parentNode.removeChild(cur); cur = n; };
+    n.onerror = function(){ if (n.parentNode) n.parentNode.removeChild(n); };
+    document.head.appendChild(n);
+  }
+  setInterval(swap, 60000);
+})();
+</script>
+</head>
+<body class="ov ov-status">
+<div class="chips" id="chips"></div>
+<script>
+(function(){
+  "use strict";
+  var box=document.getElementById("chips"), effects=[], base=Date.now();
+  function fmt(s){ s=Math.max(0,Math.round(s)); return Math.floor(s/60)+":"+String(s%60).padStart(2,"0"); }
+  function draw(){
+    var el=(Date.now()-base)/1000;
+    var live=effects.filter(function(e){ return e.remaining-el>0; });
+    var keys=live.map(function(e){return e.id;}).join(",");
+    if(box.dataset.keys!==keys){
+      box.textContent=""; box.dataset.keys=keys;
+      live.forEach(function(e){
+        var c=document.createElement("div"); c.className="chip"; c.dataset.id=e.id;
+        var l=document.createElement("span"); l.className="l"; l.textContent=e.label;
+        var t=document.createElement("span"); t.className="t";
+        c.appendChild(l); c.appendChild(t); box.appendChild(c);
+      });
+    }
+    live.forEach(function(e){
+      var c=box.querySelector('[data-id="'+e.id+'"]'); if(!c) return;
+      var left=e.remaining-el; c.querySelector(".t").textContent=fmt(left);
+      c.classList.toggle("ending", left<=10);
+    });
+  }
+  var demo=new URLSearchParams(location.search).has("demo");
+  if(demo){ effects=[{id:"a",label:"Silly voice",remaining:252},{id:"b",label:"Upside-down",remaining:41}]; }
+  function poll(){
+    if(demo){ return; }
+    fetch("/api/timed",{cache:"no-store"}).then(function(r){return r.json();})
+      .then(function(d){ effects=d.effects||[]; base=Date.now(); }).catch(function(){})
+      .finally(function(){ setTimeout(poll, 2000); });
+  }
+  poll(); setInterval(draw, 250); draw();
+})();
+</script>
+</body>
+</html>

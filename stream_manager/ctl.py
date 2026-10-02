@@ -13,6 +13,7 @@ a second poll loop just to send one request.
     python -m stream_manager.ctl restart
     python -m stream_manager.ctl stop
     python -m stream_manager.ctl start
+    python -m stream_manager.ctl undo      # undo every active wheel effect
 """
 import json, os, socket, subprocess, sys, urllib.error, urllib.request
 
@@ -110,6 +111,23 @@ def _act(action):
     return 1
 
 
+def cmd_undo():
+    """Panic button: revert every short wheel effect (flip, tint, emote-only,
+    slow mode, overlay swap). Long ones like a week of VIP are left alone —
+    revoke those from the dashboard's Wheel tab."""
+    info, _ = live_instance()
+    if not info:
+        print("Stream Manager isn't running.")
+        return 1
+    status, body = _post(info["port"], "/api/timed/undo-all", info["token"], {})
+    if status == 200 and body.get("ok"):
+        n = body.get("undone", 0)
+        print(f"Undid {n} wheel effect{'' if n == 1 else 's'}.")
+        return 0
+    print(body.get("error") or f"undo failed (HTTP {status}).")
+    return 1
+
+
 def cmd_status():
     info, ping = live_instance()
     if not info:
@@ -149,7 +167,9 @@ def main(argv=None):
         return _act("restart")
     if cmd in ("stop", "shutdown", "quit"):
         return _act("shutdown")
-    print(f"Usage: prism-ctl [status|start|restart|stop]\nUnknown command: {cmd}")
+    if cmd in ("undo", "undo-all", "panic"):
+        return cmd_undo()
+    print(f"Usage: prism-ctl [status|start|restart|stop|undo]\nUnknown command: {cmd}")
     return 2
 
 

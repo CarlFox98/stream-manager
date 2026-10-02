@@ -254,7 +254,7 @@ class _FakeServer:
 
 def _stub_teardown(monkeypatch, failing=None):
     """Record what _graceful_stop touches; `failing` raises when called."""
-    from stream_manager import chat, cooldowns, eventsub, games, health, redeems, stats, timers
+    from stream_manager import chat, cooldowns, eventsub, games, health, redeems, stats, timed, timers
     seen = []
 
     def rec(name):
@@ -268,6 +268,7 @@ def _stub_teardown(monkeypatch, failing=None):
             (chat, "stop", "stop:chat"), (redeems, "stop", "stop:redeems"),
             (eventsub, "stop", "stop:eventsub"), (timers, "stop", "stop:timers"),
             (health, "stop", "stop:health"),
+            (timed, "stop_loop", "stop:timed"),
             (cooldowns, "save", "save:cooldowns"),
             (games, "save_spin_history", "save:spins"),
             (stats, "flush", "save:stats")):
@@ -284,7 +285,7 @@ def test_graceful_stop_saves_everything_and_closes(monkeypatch, runtime):
     cli._graceful_stop(srv)
 
     assert seen == ["stop:chat", "stop:redeems", "stop:eventsub", "stop:timers",
-                    "stop:health", "save:cooldowns", "save:spins", "save:stats"]
+                    "stop:health", "stop:timed", "save:cooldowns", "save:spins", "save:stats"]
     assert srv.closed is True
     assert lifecycle.read_runtime() is None      # handshake file cleaned up
 
@@ -458,6 +459,8 @@ def test_bind_reports_the_port_it_actually_bound():
 @pytest.mark.parametrize("mod_name, file_attr, save_attr", [
     ("cooldowns", "_FILE", "save"),
     ("games", "_SPIN_FILE", "save_spin_history"),
+    ("timed", "_FILE", "_save"),
+    ("owed", "_FILE", "_save"),
 ])
 def test_state_files_survive_a_write_that_dies_halfway(mod_name, file_attr, save_attr,
                                                        tmp_path, monkeypatch):

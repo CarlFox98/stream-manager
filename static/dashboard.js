@@ -699,6 +699,81 @@ async function lcWait(pidBefore) {
   connBanner('Stream Manager hasn\'t come back — check the launcher window.');
 }
 
+// ── Wheel tab ───────────────────────────────────────────────────────
+const OUTCOME_LABELS = {
+  featured: '★ Featured', dj: '🎧 DJ', vip: '⭐ VIP 7d', game_poll: '🎮 Game poll',
+  emote_party: '🥳 Emote party', name_run: '✍️ Name run', shoutout: '📣 Shoutout', jackpot: '🎉 Jackpot',
+  tuber_flip: '🙃 Flip', cursed_tint: '🧪 Tint', overlay_swap: '🎨 Overlay swap', slow_mode: '🐌 Slow mode',
+  chat_bets: '🎲 Prediction', silly_voice: '🤪 Silly voice', bad_pun: '😹 Pun', timeout: '⏱️ Timeout',
+  nothing: '😈 Nothing',
+};
+const REQ_TEXT = { live: 'you\'re offline', target: 'needs a real viewer', streamer: 'needs a viewer who streams',
+  vip_ok: 'viewer is a mod or a permanent VIP', spotify: 'Spotify not connected or not playing',
+  steam: 'Steam library not found', obs: 'OBS WebSocket not reachable / PNG TUBER not found',
+  overlay_sets: 'only one overlay set', not_mod: 'viewer is a mod' };
+const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const ago = ts => { const m = Math.round((Date.now() / 1000 - ts) / 60); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`; };
+
+async function renderWheel() {
+  if (!$('#wh-fx')) return;
+  try {
+    const [fx, ow, ft, el] = await Promise.all([api('/api/timed?all=1'), api('/api/owed'),
+                                               api('/api/featured'), api('/api/wheel/eligibility')]);
+    const short = fx.effects.filter(e => !e.long), vips = fx.effects.filter(e => e.long);
+    $('#wh-fx').innerHTML = short.length ? short.map(e => `<div class="wh-row"><span class="wh-text">${esc(e.label)}
+        <span class="wh-sub">· ${esc(e.user || '')} · ${mmss(e.remaining)} left</span></span>
+        <button class="scene-btn" data-fx-end="${esc(e.id)}">Undo</button></div>`).join('')
+      : '<div class="stat-label">Nothing active.</div>';
+    $('#wh-vip').innerHTML = vips.length ? vips.map(e => `<div class="wh-row"><span class="wh-text">${esc(e.label)}
+        <span class="wh-sub">· ${Math.ceil(e.remaining / 86400)}d left</span></span>
+        <button class="scene-btn" data-fx-end="${esc(e.id)}">Revoke</button></div>`).join('')
+      : '<div class="stat-label">None right now.</div>';
+    $('#wh-owed').innerHTML = ow.items.length ? ow.items.map(i => `<div class="wh-row"><span class="wh-text" title="${esc(i.detail || '')}">${esc(i.text)}
+        <span class="wh-sub">· ${ago(i.created)}</span></span>
+        <button class="scene-btn" data-owed="${esc(i.id)}" data-st="done">Done</button>
+        <button class="scene-btn" data-owed="${esc(i.id)}" data-st="skipped">Skip</button></div>`).join('')
+      : '<div class="stat-label">You\'re all caught up.</div>';
+    $('#wh-feat').innerHTML = ft.viewers.length ? ft.viewers.slice().reverse().map(v => `<div class="wh-row"><span class="wh-text">${esc(v.name)}
+        <span class="wh-sub">· ${ago(v.ts)}</span></span>
+        <button class="scene-btn" data-feat-rm="${esc(v.login)}">Remove</button></div>`).join('')
+      : '<div class="stat-label">Nobody featured yet.</div>';
+    $('#wh-outcomes').innerHTML = Object.keys(OUTCOME_LABELS).map(k => {
+      const info = el[k] || { eligible: false, missing: [] };
+      const why = (info.missing || []).map(r => REQ_TEXT[r] || r).join(', ');
+      return `<button class="scene-btn" data-outcome="${k}" ${info.eligible ? '' : 'disabled'} title="${esc(why)}">${OUTCOME_LABELS[k]}</button>`;
+    }).join('');
+  } catch (e) { /* offline banner already covers this */ }
+}
+async function whUndoAll() {
+  const r = await post('/api/timed/undo-all');
+  toast(r.ok ? `Undid ${r.data.undone} effect(s)` : 'Undo failed', r.ok ? 'ok' : 'err'); renderWheel();
+}
+async function whEndFx(id) { const r = await post('/api/timed/end', { id }); if (!r.ok) toast('Could not undo that one', 'err'); renderWheel(); }
+async function whOwed(id, st) { await post('/api/owed/resolve', { id, status: st }); renderWheel(); }
+async function whFeatRm(login) { await post('/api/featured/remove', { login }); renderWheel(); }
+async function whTest(outcome) {
+  const r = await post('/api/wheel/test', { outcome });
+  const m = $('#wh-msg'); if (m) m.textContent = r.ok ? `✓ ${OUTCOME_LABELS[outcome]} — ${r.data.message || 'done'}` : `✗ ${r.data.error || r.data.message || 'failed'}`;
+  renderWheel();
+}
+async function renderSteam() {
+  const box = $('#wh-steam'); if (!box) return;
+  try {
+    const d = await api('/api/steam');
+    if (!d.ok) { box.innerHTML = `<div class="stat-label">${esc(d.error || 'No installed games found.')}</div>`; return; }
+    const pinned = new Set(d.pinned), hidden = new Set(d.hidden);
+    $('#wh-steam-sub').textContent = `${d.count} installed games. Pinned games are always offered; hidden ones never are.`;
+    box.innerHTML = d.games.map(g => {
+      const st = pinned.has(g.appid) ? 'pinned' : hidden.has(g.appid) ? 'hidden' : 'normal';
+      return `<div class="wh-row ${st === 'pinned' ? 'pinned' : st === 'hidden' ? 'hidden-game' : ''}">
+        <span class="wh-text" title="${esc(g.name)}">${esc(g.name)}</span>
+        <button class="scene-btn" data-steam="${g.appid}" data-mark="${st === 'pinned' ? 'normal' : 'pinned'}">${st === 'pinned' ? 'Unpin' : 'Pin'}</button>
+        <button class="scene-btn" data-steam="${g.appid}" data-mark="${st === 'hidden' ? 'normal' : 'hidden'}">${st === 'hidden' ? 'Show' : 'Hide'}</button></div>`;
+    }).join('');
+  } catch (e) {}
+}
+async function whSteam(appid, mark) { await post('/api/steam/mark', { appid: +appid, mark }); renderSteam(); }
+
 // ── global action delegation ────────────────────────────────────────
 document.addEventListener('click', e => {
   const t = e.target;
@@ -709,10 +784,15 @@ document.addEventListener('click', e => {
   const qDel = t.closest('[data-q-del]'); if (qDel) return deleteQuote(qDel.dataset.qDel);
   const prev = t.closest('[data-preview]'); if (prev) return switchPreview(prev.dataset.preview);
   const save = t.closest('[data-save]'); if (save) return onSave(save.dataset.save);
+  const owedBtn = t.closest('[data-owed]'); if (owedBtn) return whOwed(owedBtn.dataset.owed, owedBtn.dataset.st);
+  const fxEnd = t.closest('[data-fx-end]'); if (fxEnd) return whEndFx(fxEnd.dataset.fxEnd);
+  const featRm = t.closest('[data-feat-rm]'); if (featRm) return whFeatRm(featRm.dataset.featRm);
+  const steamBtn = t.closest('[data-steam]'); if (steamBtn) return whSteam(steamBtn.dataset.steam, steamBtn.dataset.mark);
+  const oc = t.closest('[data-outcome]'); if (oc && !oc.disabled) return whTest(oc.dataset.outcome);
   const act = t.closest('[data-act]'); if (!act) return;
   ({ 'update-install': installUpdate, 'ix-auth': ixAuth, 'ix-logout': ixLogout, 'ix-reload': ixReload,
      'cc-add': saveCustom, 'tm-add': addTimerRow, 'tm-save': saveTimers, 'q-add': addQuote,
-     'sp-auth': spAuth, 'sp-logout': spLogout,
+     'sp-auth': spAuth, 'sp-logout': spLogout, 'fx-undo-all': whUndoAll,
      'preflight': runPreflight, 'hm-mute': hmToggleMute,
      'lc-restart': () => lcArm('restart'), 'lc-shutdown': () => lcArm('shutdown')
    }[act.dataset.act] || (() => {}))();
@@ -874,6 +954,8 @@ async function pollScenes() { if (sceneSwitching) return; try { renderScenes(awa
 setInterval(pollStatus, 2000); pollStatus();
 setInterval(pollScenes, 4000); pollScenes();
 setInterval(renderInteractive, 3000); renderInteractive();
+setInterval(renderWheel, 3000); renderWheel();
+setInterval(renderSteam, 60000); renderSteam();
 setInterval(renderStats, 5000); renderStats();
 setInterval(pollMonitor, 3000); pollMonitor();
 checkUpdate(); setInterval(checkUpdate, 3600000);

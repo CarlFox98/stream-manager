@@ -4,6 +4,7 @@ import argparse, atexit, os, sys, threading, webbrowser
 from . import __version__
 from . import obs, system, twitch, updater, health, lifecycle
 from . import chat, redeems, twitch_auth, eventsub, cooldowns, games, stats, timers, spotify, shoutout
+from . import outcomes, timed
 from .config import config, TWITCH_USER, TWITCH_CLIENT_ID, DASHBOARD_PASSWORD
 from .console import style, icon, grad
 from .logging_util import setup_file_logging
@@ -47,7 +48,10 @@ def _graceful_stop(server):
     """
     for label, stop in (("chat", chat.stop), ("redeems", redeems.stop),
                         ("eventsub", eventsub.stop), ("timers", timers.stop),
-                        ("health", health.stop)):
+                        ("health", health.stop),
+                        # last: undo short wheel effects (flip, tint, emote-only…)
+                        # so nothing is left applied once the app is gone
+                        ("timed effects", timed.stop_loop)):
         try:
             stop()
         except Exception as e:
@@ -273,6 +277,14 @@ def main():
         else:
             cooldowns.load()          # restore anti-spam windows from last run
             games.load_spin_history()
+            outcomes.register_timed_kinds()
+            try:                      # undo anything a crash left flipped/tinted/emote-only
+                n = timed.recover()
+                if n:
+                    print(f"  {style('Y', '●')} Reverted {n} wheel effect(s) left over from the last run")
+            except Exception as e:
+                print(f"[timed] recovery failed: {e}")
+            timed.start_loop()
             twitch_auth.initialize(auto_login=True)  # loads cached token or starts device login
             chat.start()
             redeems.start()

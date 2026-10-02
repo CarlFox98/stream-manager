@@ -21,8 +21,8 @@ API instead of EventSub), local by default, no external services.
 | Dice | `!dice [sides]` / `!roll` | — | chat |
 | Magic 8-ball | `!8ball <question>` | — | chat |
 | Duel | `!duel @user` | — | chat |
-| Lucky Wheel | `!lucky` (mods) | **Lucky Wheel Spin** | wheel overlay + chat |
-| Risky Wheel | `!risky` (mods) | **Risky Wheel Spin** | wheel overlay + chat |
+| Lucky Wheel | `!lucky` (mods) | **Lucky Wheel Spin** (1,500) | wheel overlay + chat + real outcomes |
+| Risky Wheel | `!risky` (mods) | **Risky Wheel Spin** (2,500) | wheel overlay + chat + real outcomes |
 | Quotes | `!quote [n]`, `!addquote`, `!delquote`, `!quotecount` | — | chat |
 | Raid / Bits / Sub hype | — | (automatic via EventSub) | hype overlay + chat |
 
@@ -30,6 +30,61 @@ The two wheels are the redeem-driven headliners; coin flip / 50-50 / slots defau
 to chat commands (flip their `enabled` flag in `config.json` → `redeems` to also
 expose them as channel-point redeems). Raid/bits/sub hype fires automatically when
 EventSub is connected.
+
+## New in v0.13.0 — wheels that actually do things
+
+Every Lucky / Risky segment now either **happens automatically** or lands on
+the dashboard's **Owed Rewards** list until you tick it off — nothing is
+announced once and forgotten. And a segment that *can't* happen right now
+(offline, Spotify not playing, the viewer is a mod…) is **left off the wheel**
+for that spin, so nobody lands on something impossible.
+
+| Lucky Wheel | What happens |
+|---|---|
+| Featured Viewer ★ | Their Twitch avatar goes on Starting Soon (`featured.html`, last 3) |
+| DJ for a song 🎧 | 2 minutes to paste a Spotify **track** link in chat → it's queued (Premium) |
+| VIP for 7 days ⭐ | Granted, then **removed automatically**. Never offered to mods or permanent VIPs |
+| Chat picks the next game 🎮 | A real Twitch poll of 5 **installed** Steam games (live only) |
+| Emote party 🥳 | Emote-only chat for 2 min, then back to how it was |
+| Name the next run ✍️ | Owed: they name your next character / save / run |
+| Shoutout 📣 | Only offered to viewers who stream, while you're live |
+| JACKPOT 🎉 | Featured + VIP 7 days + an announcement |
+
+| Risky Wheel | What happens |
+|---|---|
+| Upside-down Neo 🙃 | PNG TUBER flips for 60 s, then flips back |
+| Cursed tint 🧪 | A colour filter on PNG TUBER for 2 min (Stream Manager creates it) |
+| Overlay swap 🎨 | Another PRISM set for 5 min, then back (skipped if you switched by hand) |
+| Slow mode 🐌 | 30 s slow mode for 2 min, then back to how it was |
+| Chat bets 🎲 | Opens a Twitch prediction (live only); resolving it is owed |
+| Silly voice 5 min 🤪 | On-screen countdown chip (`status.html`) |
+| Read a bad pun 😹 | Owed |
+| Timeout 60 s ⏱️ | Self-inflicted, severe (15 min per-viewer cooldown), never a mod |
+| Nothing happens… 😈 | Nothing. This time. |
+
+**Safety rails.**
+
+- Everything timed is snapshotted to `data/active-effects.json` *before* it's
+  applied and restored from that snapshot on its timer, at shutdown, and at the
+  next start if Stream Manager crashed. **Undo all effects** is on the Wheel
+  tab (VIPs are separate — Revoke them individually).
+- OBS write access is limited to the one source named in
+  `config.json → obs_effects` (PNG TUBER) and the filter Stream Manager made
+  itself. It cannot switch scenes or touch the stream.
+- The wheel rewards **pause on Twitch** whenever the program scene isn't one of
+  `redeems.allowed_scenes` (Game / Desktop), and when Stream Manager closes —
+  nobody spends points on a spin nobody sees. If the OBS scene is unknown they
+  stay on.
+- A redemption is only marked fulfilled once its outcome has actually happened;
+  if it fails, the viewer is **refunded** and chat is told why.
+
+**New overlays** (1920×1080, transparent): `featured.html` on Starting Soon
+(replaces the hand-placed image sources), `status.html` in the PRISM
+Interactive Overlays group. Both follow the active PRISM set.
+
+**After updating:** Stream Manager asks Twitch for five new permissions
+(polls, predictions, chat settings, announcements, moderator list) and Spotify
+for one (add to queue). Click **Authorize** / **Connect Spotify** once.
 
 ## New in v0.6.0
 

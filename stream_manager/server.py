@@ -5,6 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import scenes, updater
 from . import actions, chat, commands, effects, eventsub, games, health, quotes, redeems, shoutout, spotify, stats, timers, twitch_auth, lifecycle
+from . import featured, outcomes, owed, steam_library, timed
 from . import config as config_mod
 from . import __version__
 from .config import OVERLAYS_DIR, RESOURCE_DIR, DASHBOARD_PASSWORD, config
@@ -33,6 +34,8 @@ _PROTECTED_POSTS = {
     "/api/commands/toggle", "/api/commands/custom", "/api/config/save",
     "/api/timers/save", "/auth/spotify", "/auth/spotify/logout",
     "/api/lifecycle/restart", "/api/lifecycle/shutdown",
+    "/api/owed/resolve", "/api/timed/undo-all", "/api/timed/end",
+    "/api/featured/remove", "/api/steam/mark", "/api/wheel/test",
 }
 
 # config.json sections the dashboard editor may write.
@@ -82,6 +85,9 @@ def validate_section(section, data):
                         return False, f"Wheel '{kind}' segment {i+1} needs a 'label'"
                     if "weight" in s and (not _num(s["weight"]) or s["weight"] < 0):
                         return False, f"Wheel '{kind}' segment {i+1} weight must be ≥ 0"
+                    if s.get("outcome") and s["outcome"] not in outcomes.OUTCOMES:
+                        return False, (f"Wheel '{kind}' segment {i+1}: unknown outcome '{s['outcome']}' "
+                                       f"(one of: {', '.join(sorted(outcomes.OUTCOMES))})")
         return True, ""
     if section in ("automation", "eventsub"):
         for k, v in data.items():
@@ -181,6 +187,8 @@ def interactive_status():
         "shoutout": shoutout.public_status(),
         "recent": effects.history(limit=12),
         "overlays": {
+            "featured": f"{base}/featured.html",
+            "status": f"{base}/status.html",
             "coinflip": f"{base}/coinflip.html",
             "wheel": f"{base}/wheel.html",
             "slots": f"{base}/slots.html",
@@ -317,6 +325,27 @@ class Handler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/quotes":
             self.serve_json({"count": quotes.count(), "quotes": quotes.all_quotes()}); return
+
+        if parsed.path == "/api/featured":
+            self.serve_json({"viewers": featured.current()}); return
+
+        if parsed.path == "/api/timed":
+            # the on-stream status chip polls this; long effects (VIPs) are
+            # dashboard-only, so ?all=1 is required to include them
+            qs = urllib.parse.parse_qs(parsed.query)
+            self.serve_json({"effects": timed.active(include_long=bool(qs.get("all")))}); return
+
+        if parsed.path == "/api/owed":
+            self.serve_json({"items": owed.items()}); return
+
+        if parsed.path == "/api/steam":
+            self.serve_json(steam_library.status()); return
+
+        if parsed.path == "/api/wheel/eligibility":
+            ctx = {"user": "Dashboard", "user_id": "", "login": ""}
+            self.serve_json({name: {"eligible": outcomes.eligible(name, ctx),
+                                    "missing": outcomes.why_not(name, ctx)}
+                             for name in outcomes.OUTCOMES}); return
 
         if parsed.path == "/api/interactive/stats":
             self.serve_json(stats.summary()); return
@@ -526,6 +555,66 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 self.serve_json({"ok": False, "error": str(e)}, status=400)
             return
+
+        # ── wheel: owed list, timed effects, featured, steam ──
+        if self.path == "/api/owed/resolve":
+            body = self._read_json() or {}
+            it = owed.resolve(str(body.get("id", "")), body.get("status", "done"))
+            self.serve_json({"ok": bool(it), "item": it, "items": owed.items()},
+                            status=200 if it else 400); return
+
+        if self.path == "/api/timed/undo-all":
+            n = timed.revert_all(include_long=False)
+            self.log(f"Undid {n} wheel effect(s)", "✓")
+            self.serve_json({"ok": True, "undone": n, "effects": timed.active()}); return
+
+        if self.path == "/api/timed/end":
+            body = self._read_json() or {}
+            ok = timed.end(str(body.get("id", "")))
+            self.serve_json({"ok": ok, "effects": timed.active()}, status=200 if ok else 400); return
+
+        if self.path == "/api/featured/remove":
+            body = self._read_json() or {}
+            featured.remove(str(body.get("login", "")).lower())
+            self.serve_json({"ok": True, "viewers": featured.current()}); return
+
+        if self.path == "/api/steam/mark":
+            body = self._read_json() or {}
+            try:
+                appid = int(body.get("appid"))
+            except (TypeError, ValueError):
+                self.serve_json({"ok": False, "error": "appid required"}, status=400); return
+            mark = body.get("mark", "normal")
+            if mark not in ("pinned", "hidden", "normal"):
+                self.serve_json({"ok": False, "error": "mark must be pinned|hidden|normal"}, status=400); return
+            st = dict(config.get("steam") or {})
+            pinned = [a for a in st.get("pinned", []) if a != appid]
+            hidden = [a for a in st.get("hidden", []) if a != appid]
+            if mark == "pinned":
+                pinned.append(appid)
+            elif mark == "hidden":
+                hidden.append(appid)
+            st.update(pinned=pinned, hidden=hidden)
+            config_mod.save_config({"steam": st})
+            self.serve_json({"ok": True, **steam_library.status()}); return
+
+        if self.path == "/api/wheel/test":
+            # Force one outcome (dashboard "Test" button). Runs for real —
+            # emote-only really turns on — but as "Dashboard", so outcomes that
+            # need a real viewer (VIP, timeout, shoutout) report why instead.
+            body = self._read_json() or {}
+            name = str(body.get("outcome", ""))
+            if name not in outcomes.OUTCOMES:
+                self.serve_json({"ok": False, "error": "unknown outcome"}, status=400); return
+            ctx = {"user": body.get("user") or "Dashboard", "user_id": "", "login": "",
+                   "say": chat.say if chat.status.get("connected") else None}
+            missing = outcomes.why_not(name, ctx)
+            if missing:
+                self.serve_json({"ok": False, "error": "not possible right now: " + ", ".join(missing)},
+                                status=409); return
+            ok, msg = outcomes.run(name, ctx)
+            self.log(f"Wheel test {name} → {msg or ('ok' if ok else 'failed')}", "→" if ok else "✗")
+            self.serve_json({"ok": ok, "message": msg}, status=200 if ok else 400); return
 
         if self.path == "/api/quotes/add":
             body = self._read_json() or {}

@@ -45,12 +45,12 @@ _ACTIONS = ("lucky", "risky", "coinflip", "5050")
 #   max_per_user_per_stream    per-viewer cap each stream (0 = unlimited)
 #   max_per_stream             total cap each stream (0 = unlimited)
 DEFAULT_REDEEMS = {
-    "lucky":    {"title": "Lucky Wheel Spin", "cost": 500, "enabled": True,
+    "lucky":    {"title": "Lucky Wheel Spin", "cost": 1500, "enabled": True,
                  "prompt": "Spin the Lucky Wheel for a fun reward!",
-                 "global_cooldown": 60, "max_per_user_per_stream": 3, "max_per_stream": 0},
-    "risky":    {"title": "Risky Wheel Spin", "cost": 500, "enabled": True,
+                 "global_cooldown": 120, "max_per_user_per_stream": 2, "max_per_stream": 0},
+    "risky":    {"title": "Risky Wheel Spin", "cost": 2500, "enabled": True,
                  "prompt": "Spin the Risky Wheel… if you dare.",
-                 "global_cooldown": 60, "max_per_user_per_stream": 3, "max_per_stream": 0},
+                 "global_cooldown": 180, "max_per_user_per_stream": 2, "max_per_stream": 0},
     "coinflip": {"title": "Coin Flip", "cost": 100, "enabled": False,
                  "prompt": "Flip a coin — heads or tails?",
                  "global_cooldown": 15, "max_per_user_per_stream": 0, "max_per_stream": 0},
@@ -232,7 +232,7 @@ def _redeem_opts():
     r = config.get("redeems") if isinstance(config.get("redeems"), dict) else {}
     return {
         "auto_fulfill": r.get("auto_fulfill", True),
-        "refund_on_failure": r.get("refund_on_failure", False),
+        "refund_on_failure": r.get("refund_on_failure", True),
         "catch_up": r.get("catch_up", False),   # process redemptions from before startup?
     }
 
@@ -268,18 +268,84 @@ def handle_redemption(reward_id, red, action=None):
         return  # ignore backlog from before we started (no refund, just skip)
     _seen.add(rid)
     user = red.get("user_name") or red.get("user_login") or "someone"
+    # The wheels finish later (their outcome lands when the overlay stops), so
+    # the redemption's fate is decided by these callbacks, exactly once.
+    settled = []
 
-    ok = False
+    def settle(status_):
+        if settled:
+            return
+        settled.append(status_)
+        if status_ == "CANCELED" and opts["refund_on_failure"]:
+            _fulfill(reward_id, rid, "CANCELED")     # refund the viewer's points
+        elif opts["auto_fulfill"]:
+            _fulfill(reward_id, rid, "FULFILLED")
+
+    result = None
     try:
-        ok = games.run_action(action, user=user, say=chat.say) is not None
+        result = games.run_action(action, user=user, say=chat.say,
+                                  user_id=red.get("user_id", ""),
+                                  login=red.get("user_login", ""),
+                                  on_fail=lambda _why: settle("CANCELED"),
+                                  on_ok=lambda: settle("FULFILLED"))
     except Exception as e:
         print(f"[redeems] handler error for {action}: {e}")
-        ok = False
+        result = None
+    if result is None:
+        settle("CANCELED")
 
-    if not ok and opts["refund_on_failure"]:
-        _fulfill(reward_id, rid, "CANCELED")     # refund the viewer's points
-    elif opts["auto_fulfill"]:
-        _fulfill(reward_id, rid, "FULFILLED")
+
+# ── pause rewards off-scene ────────────────────────────────────────────────
+# The wheels only show on the scenes that carry the interactive overlays (Game
+# and Desktop). On Starting Soon / BRB / Ending a spin would play to nobody, so
+# those rewards are paused on Twitch there — viewers can't spend points on it.
+_paused = {}    # action -> bool as last set on Twitch (None = unknown)
+
+
+def _pause_cfg():
+    r = config.get("redeems") if isinstance(config.get("redeems"), dict) else {}
+    scenes_ = r.get("allowed_scenes") or []
+    return {"scenes": [s_ for s_ in scenes_ if isinstance(s_, str)],
+            "rewards": r.get("pause_rewards") or ["lucky", "risky"],
+            "when_closed": r.get("pause_when_closed", True)}
+
+
+def set_paused(action, paused):
+    info = status["rewards"].get(action) or {}
+    rid = info.get("id")
+    if not rid or _paused.get(action) is paused:
+        return False
+    q = urllib.parse.urlencode({"broadcaster_id": _broadcaster_id(), "id": rid})
+    code, _ = _request("PATCH", f"{_BASE}?{q}", {"is_paused": bool(paused)})
+    if code == 200:
+        _paused[action] = bool(paused)
+        info["paused"] = bool(paused)
+        return True
+    return False
+
+
+def want_paused(scene, cfg=None):
+    """None = leave alone (feature off, or OBS scene unknown)."""
+    cfg = cfg or _pause_cfg()
+    if not cfg["scenes"] or not scene:
+        return None
+    return scene not in cfg["scenes"]
+
+
+def sync_pause(scene=None):
+    if scene is None:
+        from .state import state
+        scene = (state.get("obs") or {}).get("scene") or ""
+    cfg = _pause_cfg()
+    if not cfg["scenes"]:
+        return
+    want = want_paused(scene, cfg)
+    if want is None:
+        # OBS scene unknown (OBS closed, WebSocket off): don't leave the rewards
+        # stuck paused from the last shutdown — fall back to always-on.
+        want = False
+    for action in cfg["rewards"]:
+        set_paused(action, want)
 
 
 def _poll_reward(action, reward_id):
@@ -310,6 +376,10 @@ def _loop():
     interval = max(int(config.get("redeem_poll_interval", 3)), 2)
     while not _stop.is_set():
         if status.get("ready"):
+            try:
+                sync_pause()
+            except Exception as e:
+                print(f"[redeems] pause sync failed: {e}")
             # If EventSub is driving redemptions, don't also poll (avoid dupes).
             if status.get("transport") != "eventsub":
                 for action, info in list(status["rewards"].items()):
@@ -338,7 +408,16 @@ def start():
 
 
 def stop():
+    """Stop polling. With Stream Manager gone nothing would process a spin, so
+    the wheel rewards are paused rather than left to eat viewers' points."""
     _stop.set()
+    cfg = _pause_cfg()
+    if cfg["when_closed"] and status.get("ready"):
+        for action in cfg["rewards"]:
+            try:
+                set_paused(action, True)
+            except Exception:
+                pass
 
 
 def public_status():

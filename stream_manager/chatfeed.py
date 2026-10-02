@@ -331,7 +331,7 @@ def message(tags, prefix, text):
     me = _self_login()
     body, shift = split_action(text or "")
     emo = tags.get("emotes", "")
-    frags = fragments(body, emo, me, offset=_best_offset(body, emo, shift))
+    frags = apply_third_party(fragments(body, emo, me, offset=_best_offset(body, emo, shift)))
     try:
         bits = int(tags.get("bits") or 0)
     except (ValueError, TypeError):
@@ -403,3 +403,236 @@ def clearchat(tags, target_login=""):
             "user_id": tags.get("target-user-id", "") or "",
             "login": (target_login or "").lower(),
             "seconds": seconds}
+
+
+# ---------------------------------------------------------- event cards ----
+# Phase 5: subs, resubs, gifts, raids and cheers render inline in chat as
+# highlighted cards. Additive: they ride the same v1 contract (`kind:"event"`
+# is ignored by an overlay that predates it, and a cheer is still a `msg` that
+# merely gains an `event` field), so no CONTRACT_VERSION bump.
+_TIERS = {"1000": "Tier 1", "2000": "Tier 2", "3000": "Tier 3", "Prime": "Prime"}
+
+
+def _int(v, dflt=0):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return dflt
+
+
+def _event_label(mid, tags):
+    tier = _TIERS.get(tags.get("msg-param-sub-plan", ""), "")
+    months = _int(tags.get("msg-param-cumulative-months"))
+    if mid == "sub":
+        return "sub", f"subscribed{' with ' + tier if tier else ''}!"
+    if mid == "resub":
+        return "resub", f"resubscribed — {months} months{' · ' + tier if tier else ''}!"
+    if mid == "subgift":
+        to = unescape_tag(tags.get("msg-param-recipient-display-name") or "")
+        return "gift", f"gifted a {tier or 'Tier 1'} sub to {to}!"
+    if mid == "submysterygift":
+        n = _int(tags.get("msg-param-mass-gift-count"), 1)
+        return "giftbomb", f"is gifting {n} sub{'s' if n != 1 else ''} to the community!"
+    if mid == "raid":
+        n = _int(tags.get("msg-param-viewerCount"))
+        return "raid", f"is raiding with {n} viewer{'s' if n != 1 else ''}!"
+    if mid == "announcement":
+        return "announcement", "announcement"
+    return None, None
+
+
+def usernotice(tags, text=""):
+    """One USERNOTICE -> an `event` card, or None for kinds we don't show.
+
+    Individual gifts that belong to a mass gift are dropped: the
+    submysterygift line already says "gifting 20 subs", and twenty more cards
+    would flush the whole chat off screen.
+    """
+    mid = tags.get("msg-id", "") or ""
+    if mid == "subgift" and tags.get("msg-param-community-gift-id"):
+        return None
+    etype, label = _event_label(mid, tags)
+    if not etype:
+        return None
+    login = (tags.get("login") or "").lower()
+    uid = tags.get("user-id", "") or ""
+    me = _self_login()
+    body = text or ""
+    frags = apply_third_party(fragments(body, tags.get("emotes", ""), me)) if body else []
+    name = unescape_tag(tags.get("display-name") or "") or login
+    if etype == "raid":
+        name = unescape_tag(tags.get("msg-param-displayName") or "") or name
+    return {
+        "v": CONTRACT_VERSION,
+        "kind": "event",
+        "id": tags.get("id", "") or "",
+        "ts": _int(tags.get("tmi-sent-ts")) or int(time.time() * 1000),
+        "user": {"login": login, "name": name, "id": uid, "color": _color(tags, uid)},
+        "badges": _badges(tags),
+        "flags": {"mod": False, "sub": True, "vip": False, "broadcaster": False,
+                  "first": False, "returning": False},
+        "bits": 0,
+        "action": False,
+        "reply_to": None,
+        "event": {"type": etype, "label": label,
+                  "system": unescape_tag(tags.get("system-msg") or "")},
+        "text": body,
+        "fragments": frags,
+        "mentions": [f["login"] for f in frags if f.get("type") == "mention"],
+    }
+
+
+def cheer_event(msg):
+    """Give a cheer `msg` its card line in place (it stays kind "msg")."""
+    if msg.get("bits", 0) > 0:
+        b = msg["bits"]
+        msg["event"] = {"type": "cheer", "label": f"cheered {b} bit{'s' if b != 1 else ''}!", "system": ""}
+    return msg
+
+
+# ---------------------------------------------------- third-party emotes ----
+# Phase 6: 7TV, BetterTTV and FrankerFaceZ emotes. Same rule as badges: the
+# fetch never runs on the IRC thread. The map is replaced whole, never mutated.
+_tp_lock = threading.Lock()
+_tp_cache = {"map": {}, "at": 0.0, "ok": False}
+_tp_refreshing = False
+_TP_TTL = 1800.0
+_TP_RETRY = 120.0
+
+
+def _get_json(url, timeout=6):
+    import json, urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": "PRISM-StreamManager"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read())
+
+
+def _seventv(data):
+    out = {}
+    for e in ((data or {}).get("emote_set") or data or {}).get("emotes", []) or []:
+        name, eid = e.get("name"), e.get("id")
+        if name and eid:
+            out[name] = {"url": f"https://cdn.7tv.app/emote/{eid}/2x.webp", "provider": "7tv", "id": eid}
+    return out
+
+
+def _bttv(items):
+    return {e["code"]: {"url": f"https://cdn.betterttv.net/emote/{e['id']}/2x", "provider": "bttv", "id": e["id"]}
+            for e in items or [] if e.get("code") and e.get("id")}
+
+
+def _ffz(data):
+    out = {}
+    for s in ((data or {}).get("sets") or {}).values():
+        for e in s.get("emoticons", []) or []:
+            urls = e.get("urls") or {}
+            u = urls.get("2") or urls.get("1") or ""
+            if e.get("name") and u:
+                out[e["name"]] = {"url": u if u.startswith("http") else "https:" + u,
+                                  "provider": "ffz", "id": str(e.get("id", ""))}
+    return out
+
+
+def _build_tp_map(channel_id):
+    """Globals first, channel sets last so a channel emote wins a name clash;
+    within a tier the order is FFZ < BTTV < 7TV. Each provider fails alone."""
+    layers = []
+    sources = [
+        ("ffz-global", "https://api.frankerfacez.com/v1/set/global", _ffz),
+        ("bttv-global", "https://api.betterttv.net/3/cached/emotes/global", _bttv),
+        ("7tv-global", "https://7tv.io/v3/emote-sets/global", _seventv),
+    ]
+    if channel_id:
+        sources += [
+            ("ffz", f"https://api.frankerfacez.com/v1/room/id/{channel_id}", _ffz),
+            ("bttv", f"https://api.betterttv.net/3/cached/users/twitch/{channel_id}",
+             lambda d: _bttv((d or {}).get("channelEmotes", []) + (d or {}).get("sharedEmotes", []))),
+            ("7tv", f"https://7tv.io/v3/users/twitch/{channel_id}", _seventv),
+        ]
+    ok_any = False
+    for label, url, parse in sources:
+        try:
+            layers.append(parse(_get_json(url)))
+            ok_any = True
+        except Exception as e:
+            print(f"[chatfeed] {label} emotes unavailable ({e})")
+    merged = {}
+    for layer in layers:
+        merged.update(layer)
+    if not ok_any:
+        raise RuntimeError("no emote provider reachable")
+    return merged
+
+
+def _refresh_tp():
+    global _tp_refreshing
+    try:
+        from . import twitch_auth
+        built = _build_tp_map((twitch_auth.auth or {}).get("user_id") or "")
+    except Exception as e:
+        with _tp_lock:
+            _tp_cache["at"] = time.time()
+            _tp_refreshing = False
+        print(f"[chatfeed] third-party emotes unavailable ({e})")
+        return
+    except BaseException:
+        with _tp_lock:
+            _tp_cache["at"] = time.time()
+            _tp_refreshing = False
+        raise
+    with _tp_lock:
+        _tp_cache.update({"map": built, "at": time.time(), "ok": True})
+        _tp_refreshing = False
+
+
+def third_party_map(force=False):
+    """Cached {name: {url, provider, id}}. Never raises, never blocks."""
+    global _tp_refreshing
+    try:
+        from .config import config
+        if not (config.get("chat") or {}).get("third_party_emotes", True):
+            return {}
+    except Exception:
+        pass
+    now = time.time()
+    with _tp_lock:
+        ttl = _TP_TTL if _tp_cache["ok"] else _TP_RETRY
+        current = _tp_cache["map"]
+        if not (force or (now - _tp_cache["at"]) >= ttl) or _tp_refreshing:
+            return current
+        _tp_refreshing = True
+    try:
+        threading.Thread(target=_refresh_tp, name="prism-3p-emotes", daemon=True).start()
+    except RuntimeError:
+        with _tp_lock:
+            _tp_refreshing = False
+    return current
+
+
+_WORD_RE = re.compile(r"\S+")
+
+
+def apply_third_party(frags, emap=None):
+    """Split text fragments on whole words that are third-party emote names.
+    Twitch-native emotes and mentions are already placed and are left alone."""
+    emap = third_party_map() if emap is None else emap
+    if not emap:
+        return frags
+    out = []
+    for f in frags:
+        if f.get("type") != "text":
+            out.append(f)
+            continue
+        text, last = f["text"], 0
+        for m in _WORD_RE.finditer(text):
+            hit = emap.get(m.group(0))
+            if not hit:
+                continue
+            if m.start() > last:
+                out.append({"type": "text", "text": text[last:m.start()]})
+            out.append({"type": "emote", "id": hit["id"], "name": m.group(0),
+                        "url": hit["url"], "provider": hit["provider"]})
+            last = m.end()
+        if last < len(text):
+            out.append({"type": "text", "text": text[last:]})
+    return out

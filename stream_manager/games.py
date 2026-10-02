@@ -158,9 +158,17 @@ def _pick_wheel(kind, segments, user):
         non_severe = [i for i in candidates if not segments[i].get("severe")]
         if non_severe:
             candidates = non_severe
-    # 2) avoid the exact slot they just got (only if there's an alternative)
-    if ul and meta["no_repeat"] and hist.get("last_index") in candidates and len(candidates) > 1:
-        candidates = [i for i in candidates if i != hist["last_index"]]
+    # 2) avoid the exact slot they just got (only if there's an alternative).
+    #    Matched by label: the wheel is now built from the segments eligible at
+    #    spin time, so the same slot can sit at a different index next spin.
+    if ul and meta["no_repeat"] and len(candidates) > 1:
+        last = hist.get("last_label")
+        if last is not None:
+            rest = [i for i in candidates if segments[i].get("label") != last]
+        else:
+            rest = [i for i in candidates if i != hist.get("last_index")]
+        if rest:
+            candidates = rest
 
     idx = _pick_weighted(segments, candidates)
 
@@ -168,6 +176,7 @@ def _pick_wheel(kind, segments, user):
         with _spin_lock:
             _spin_history[(kind, ul)] = {
                 "last_index": idx,
+                "last_label": segments[idx].get("label"),
                 "last_severe_ts": now if segments[idx].get("severe") else hist.get("last_severe_ts", 0),
             }
     return idx
@@ -209,12 +218,74 @@ def fifty_fifty(user, say=None):
     return result
 
 
-def spin_wheel(kind, user, say=None, user_id=""):
-    """Spin the 'lucky' or 'risky' wheel. Returns the winning label."""
+def eligible_segments(kind, ctx):
+    """The segments that can actually happen right now for this viewer.
+
+    A segment with an "outcome" is kept only if outcomes.eligible() says its
+    requirements hold (live, Spotify playing, a real target, not a mod…).
+    Segments with no outcome (plain announcements) or a legacy "action" are
+    always eligible, exactly as before.
+    """
+    from . import outcomes
+    out = []
+    for s in _wheel_cfg(kind)["segments"]:
+        name = s.get("outcome")
+        if name and not outcomes.eligible(name, ctx):
+            continue
+        out.append(s)
+    return out
+
+
+def _run_outcome_later(name, ctx, on_fail, delay, on_ok=None):
+    """Run the outcome when the overlay's wheel stops, off the caller's thread.
+    Success calls on_ok (fulfil the redemption); failure calls on_fail (refund)
+    and tells chat why. The redemption stays UNFULFILLED until then — Twitch
+    can't refund one that has already been marked fulfilled."""
+    from . import outcomes
+
+    def go():
+        ok, msg = outcomes.run(name, ctx)
+        if ok and on_ok:
+            try:
+                on_ok()
+            except Exception as e:
+                print(f"[games] fulfil failed: {e}")
+        if not ok:
+            print(f"[games] outcome {name} failed: {msg}")
+            if ctx.get("say"):
+                try:
+                    ctx["say"](f"⚠️ That outcome couldn't happen ({msg}) — {ctx['user']}'s points were refunded."
+                               if on_fail else f"⚠️ That outcome couldn't happen ({msg}).")
+                except Exception:
+                    pass
+            if on_fail:
+                try:
+                    on_fail(msg)
+                except Exception as e:
+                    print(f"[games] refund failed: {e}")
+    if delay > 0:
+        t = threading.Timer(delay, go)
+        t.daemon = True
+        t.start()
+    else:
+        go()
+
+
+def spin_wheel(kind, user, say=None, user_id="", login="", on_fail=None, on_ok=None):
+    """Spin the 'lucky' or 'risky' wheel. Returns the winning label, or None if
+    nothing on the wheel can happen right now (the caller refunds)."""
+    from . import outcomes
     cfg = _wheel_cfg(kind)
-    segments = _colored(cfg["segments"])
-    idx = _pick_wheel(kind, cfg["segments"], user)   # weighted + anti-spam guards
-    winseg = cfg["segments"][idx]
+    ctx = {"kind": kind, "user": user or "Someone", "user_id": user_id or "",
+           "login": (login or user or "").lower(), "say": say}
+    pool = eligible_segments(kind, ctx)
+    if not pool:
+        if say:
+            say(f"⚠️ Nothing on the {cfg['title']} can happen right now — points refunded.")
+        return None
+    segments = _colored(pool)
+    idx = _pick_wheel(kind, pool, user)   # weighted + anti-spam guards
+    winseg = pool[idx]
     winner = segments[idx]["label"]
     effects.emit("wheel", {
         "mode": kind,
@@ -229,11 +300,17 @@ def spin_wheel(kind, user, say=None, user_id=""):
     if say:
         icon = "🍀" if kind == "lucky" else "☠️"
         say(f"{icon} {cfg['title']} — {user} landed on: {winner}")
-    # optional automated outcome (opt-in + allowlisted; needs a real target)
+    name = winseg.get("outcome")
+    if name:
+        _run_outcome_later(name, ctx, on_fail, float(outcomes.opt("outcome_delay")), on_ok)
+        return winner
+    # legacy automated action (opt-in + allowlisted; needs a real target)
     spec = winseg.get("action")
     if spec:
         from . import actions
         actions.run(spec, user=user, user_id=user_id, say=say)
+    if on_ok:
+        on_ok()
     return winner
 
 
@@ -334,20 +411,29 @@ def _handle_quote(args, user, can_edit, say):
 # Map canonical action names (redeems / dashboard tests) to a common
 # (user, say, user_id) signature.
 NAMED_ACTIONS = {
-    "coinflip": lambda user, say, user_id: coinflip(user, say),
-    "5050":     lambda user, say, user_id: fifty_fifty(user, say),
-    "lucky":    lambda user, say, user_id: spin_wheel("lucky", user, say, user_id),
-    "risky":    lambda user, say, user_id: spin_wheel("risky", user, say, user_id),
-    "slots":    lambda user, say, user_id: slots(user, say, user_id),
+    "coinflip": lambda user, say, user_id, **kw: coinflip(user, say),
+    "5050":     lambda user, say, user_id, **kw: fifty_fifty(user, say),
+    "lucky":    lambda user, say, user_id, **kw: spin_wheel("lucky", user, say, user_id, **kw),
+    "risky":    lambda user, say, user_id, **kw: spin_wheel("risky", user, say, user_id, **kw),
+    "slots":    lambda user, say, user_id, **kw: slots(user, say, user_id),
 }
 
 
-def run_action(name, user="", say=None, user_id=""):
-    """Trigger a game by canonical name (used by redemptions + dashboard tests)."""
+def run_action(name, user="", say=None, user_id="", login="", on_fail=None, on_ok=None):
+    """Trigger a game by canonical name (used by redemptions + dashboard tests).
+
+    user_id/login identify the redeeming viewer — VIP, timeout, featured and
+    the DJ window all need them. Redemptions used to drop them, so automated
+    outcomes silently had no target."""
     fn = NAMED_ACTIONS.get(name)
     if not fn:
         return None
-    return fn(user, say, user_id)
+    if name in ("lucky", "risky"):
+        return fn(user, say, user_id, login=login, on_fail=on_fail, on_ok=on_ok)
+    result = fn(user, say, user_id)
+    if result is not None and on_ok:
+        on_ok()
+    return result
 
 
 def handle_command(message, user, is_mod=False, is_broadcaster=False, say=None,
@@ -400,9 +486,9 @@ def handle_command(message, user, is_mod=False, is_broadcaster=False, say=None,
             duel(user, args[0] if args else "", say)
         return True
     if cmd in ("luckywheel", "luckyspin", "lucky") and can_edit:
-        spin_wheel("lucky", user, say, user_id); return True
+        spin_wheel("lucky", user, say, user_id, login=user.lower()); return True
     if cmd in ("riskywheel", "riskyspin", "risky") and can_edit:
-        spin_wheel("risky", user, say, user_id); return True
+        spin_wheel("risky", user, say, user_id, login=user.lower()); return True
     if cmd in ("quote",):
         # only rate-limit plain lookups, not mod add/del sub-commands
         is_lookup = not (args and args[0].lower() in ("add", "del", "delete", "remove"))
@@ -458,40 +544,41 @@ def handle_command(message, user, is_mod=False, is_broadcaster=False, say=None,
 
 # ── default wheel content (used until you customize config.json) ───────────
 _DEFAULT_WHEELS = {
+    # Every segment either does something automatically or lands on the
+    # dashboard's owed list. "outcome" names an entry in outcomes.OUTCOMES;
+    # its requirements decide whether the segment is on the wheel at all.
     "lucky": {
         "title": "Lucky Wheel",
         "color": "#57F2E4",
         "no_repeat": True,             # never the same slot twice in a row per viewer
-        # NOTE: deliberately no "temp mod" / privilege-escalation rewards here.
-        # Handing out moderator powers for cheap channel points is a security
-        # risk (mods can ban, delete messages, edit the stream, run commands).
-        # If you ever add one, gate it behind a very high cost + tiny weight,
-        # and remember the app only *announces* — you grant it yourself.
+        # Deliberately no "temp mod" / privilege-escalation outcome: mods can
+        # ban, delete messages and edit the stream. VIP is cosmetic and expires.
         "segments": [
-            {"label": "Show your sona on the starting screen 🦊", "weight": 3},
-            {"label": "VIP for a week", "weight": 1, "action": "vip"},
-            {"label": "Pick the next song 🎵", "weight": 3},
-            {"label": "Choose the next game", "weight": 2},
-            {"label": "Streamer does 10 push-ups", "weight": 2},
-            {"label": "Add your emote suggestion to the list 😸", "weight": 2},
-            {"label": "Shoutout + follow", "weight": 3, "action": "shoutout"},
-            {"label": "JACKPOT: all of the above 🎉", "weight": 1},
+            {"label": "Featured Viewer ★", "weight": 3, "outcome": "featured"},
+            {"label": "DJ for a song 🎧", "weight": 3, "outcome": "dj"},
+            {"label": "VIP for 7 days ⭐", "weight": 1, "outcome": "vip"},
+            {"label": "Chat picks the next game 🎮", "weight": 2, "outcome": "game_poll"},
+            {"label": "Emote party 🥳", "weight": 2, "outcome": "emote_party"},
+            {"label": "Name the next run ✍️", "weight": 2, "outcome": "name_run"},
+            {"label": "Shoutout 📣", "weight": 2, "outcome": "shoutout"},
+            {"label": "JACKPOT 🎉", "weight": 1, "outcome": "jackpot"},
         ],
     },
     "risky": {
         "title": "Risky Wheel",
         "color": "#FF7ACb",
-        "no_repeat": True,             # never the same slot twice in a row per viewer
+        "no_repeat": True,
         "severe_cooldown_seconds": 900,  # a viewer can't hit a "severe" slot again for 15 min
         "segments": [
-            {"label": "Read a bad pun on stream 😹", "weight": 3},
-            {"label": "Play one round blindfolded", "weight": 2},
-            {"label": "Swap to the cursed overlay theme", "weight": 2},
-            {"label": "Talk in a silly voice for 5 min", "weight": 3},
-            {"label": "Timeout for 60s ⏱️", "weight": 1, "severe": True, "action": "timeout:60"},
-            {"label": "Nothing happens… this time 😈", "weight": 3},
-            {"label": "Let chat rename your sona (1 stream)", "weight": 1},
-            {"label": "Do the next challenge on hard mode", "weight": 2},
+            {"label": "Upside-down Neo 🙃", "weight": 2, "outcome": "tuber_flip"},
+            {"label": "Cursed tint 🧪", "weight": 2, "outcome": "cursed_tint"},
+            {"label": "Overlay swap 🎨", "weight": 2, "outcome": "overlay_swap"},
+            {"label": "Slow mode 🐌", "weight": 2, "outcome": "slow_mode"},
+            {"label": "Chat bets 🎲", "weight": 2, "outcome": "chat_bets"},
+            {"label": "Silly voice 5 min 🤪", "weight": 3, "outcome": "silly_voice"},
+            {"label": "Read a bad pun 😹", "weight": 3, "outcome": "bad_pun"},
+            {"label": "Timeout 60s ⏱️", "weight": 1, "severe": True, "outcome": "timeout"},
+            {"label": "Nothing happens… 😈", "weight": 3, "outcome": "nothing"},
         ],
     },
 }

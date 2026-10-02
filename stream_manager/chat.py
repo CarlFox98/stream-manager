@@ -99,7 +99,10 @@ def _handle_privmsg(tags, prefix, params, channel):
     # Wrapped because this thread also runs !commands — a malformed message
     # must never take the IRC client down with it.
     try:
-        effects.emit("chat", chatfeed.message(tags, prefix, text), summary=None)
+        msg = chatfeed.message(tags, prefix, text)
+        if (config.get("chat") or {}).get("event_cards", True):
+            chatfeed.cheer_event(msg)
+        effects.emit("chat", msg, summary=None)
     except Exception as e:
         print(f"[chat] feed error: {e}")
     # First-time chatter of the stream → alert (Twitch tags the message).
@@ -109,6 +112,14 @@ def _handle_privmsg(tags, prefix, params, channel):
             alerts.first_chat(user, say=say)
         except Exception as e:
             print(f"[chat] first-chat alert error: {e}")
+    # Lucky Wheel "DJ for a song": the winner's next Spotify link is queued.
+    # Cheap when no window is open (one dict lookup), and guarded like the rest.
+    try:
+        from . import outcomes
+        if outcomes.on_chat(nick, user, text, say=say):
+            return
+    except Exception as e:
+        print(f"[chat] DJ hook error: {e}")
     prefix_char = config.get("command_prefix", "!") or "!"
     if not text.startswith(prefix_char):
         return
@@ -134,7 +145,9 @@ def _emit_mod(build, *args):
     which is the whole failure this exists to prevent.
     """
     try:
-        effects.emit("chat", build(*args), summary=None)
+        payload = build(*args)
+        if payload:                       # builders may decline (e.g. a gift inside a gift bomb)
+            effects.emit("chat", payload, summary=None)
     except Exception as e:
         print(f"[chat] mod feed error: {e}")
 
@@ -158,6 +171,10 @@ def dispatch(tags, prefix, command, params, channel):
         # ["#channel"] = whole chat cleared; ["#channel", "login"] = that one
         # user timed out or banned.
         _emit_mod(chatfeed.clearchat, tags, params[-1] if len(params) > 1 else "")
+    elif command == "USERNOTICE":
+        # sub / resub / gift / raid cards inline in the PRISM chat overlay
+        if (config.get("chat") or {}).get("event_cards", True):
+            _emit_mod(chatfeed.usernotice, tags, params[-1] if len(params) > 1 else "")
     elif command in ("001", "GLOBALUSERSTATE", "JOIN"):
         status["connected"] = True
     elif command == "NOTICE" and params and "authentication failed" in params[-1].lower():
@@ -195,6 +212,7 @@ def _connect_and_run():
     # resolved before the first PRIVMSG arrives. Never fetches on this thread.
     try:
         chatfeed.warm()
+        chatfeed.third_party_map()   # off-thread 7TV/BTTV/FFZ fetch
     except Exception as e:
         print(f"[chat] badge warm-up skipped: {e}")
 

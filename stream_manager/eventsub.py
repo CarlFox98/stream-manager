@@ -101,6 +101,7 @@ def _on_notification(payload):
             "id": event.get("id"),
             "user_name": event.get("user_name") or event.get("user_login"),
             "user_id": event.get("user_id"),
+            "user_login": event.get("user_login"),     # the DJ window keys on it
             "redeemed_at": event.get("redeemed_at"),
             "user_input": event.get("user_input", ""),
         }

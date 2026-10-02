@@ -44,6 +44,7 @@
     <button class="tab active" data-tab="overview" role="tab">Overview</button>
     <button class="tab" data-tab="health" role="tab">Health</button>
     <button class="tab" data-tab="interactive" role="tab">Interactive</button>
+    <button class="tab" data-tab="wheel" role="tab">Wheel</button>
     <button class="tab" data-tab="commands" role="tab">Commands</button>
     <button class="tab" data-tab="timers" role="tab">Timers</button>
     <button class="tab" data-tab="quotes" role="tab">Quotes</button>
@@ -220,7 +221,49 @@
         <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/static/interactive/slots.html</code><span class="hint">Copy</span></div>
         <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/static/interactive/hype.html</code><span class="hint">Copy</span></div>
         <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/static/interactive/shoutout.html</code><span class="hint">Copy</span></div>
+        <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/static/interactive/status.html</code><span class="hint">Copy</span></div>
+        <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/static/interactive/featured.html</code><span class="hint">Copy</span></div>
       </div>
+    </div>
+  </section>
+
+  <!-- ── Wheel: effects, owed rewards, VIPs, featured, outcomes, Steam ── -->
+  <section class="tab-panel" id="tab-wheel">
+    <div class="row">
+      <div class="card">
+        <h3>Active Effects</h3>
+        <div class="scene-sub">Everything a spin turned on. Each one undoes itself on its timer — or now.</div>
+        <div class="ix-feed" id="wh-fx"><div class="stat-label">Nothing active.</div></div>
+        <div class="auth-actions"><button class="btn-primary" data-act="fx-undo-all">⟲ Undo all effects</button></div>
+      </div>
+      <div class="card">
+        <h3>Owed Rewards</h3>
+        <div class="scene-sub">Outcomes you deliver by hand. They stay here until ticked off.</div>
+        <div class="ix-feed" id="wh-owed"><div class="stat-label">You're all caught up.</div></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="card">
+        <h3>VIPs from the Wheel</h3>
+        <div class="scene-sub">Removed automatically when they expire. Existing VIPs and mods are never touched.</div>
+        <div class="ix-feed" id="wh-vip"><div class="stat-label">None right now.</div></div>
+      </div>
+      <div class="card">
+        <h3>Featured Viewers</h3>
+        <div class="scene-sub">Shown on Starting Soon (<code>/static/interactive/featured.html</code>).</div>
+        <div class="ix-feed" id="wh-feat"><div class="stat-label">Nobody featured yet.</div></div>
+      </div>
+    </div>
+    <div class="card" style="flex:none">
+      <h3>Test an Outcome</h3>
+      <div class="scene-sub">Runs it for real as "Dashboard". Greyed out = can't happen right now (hover for why). Outcomes that need a real viewer (VIP, timeout, shoutout) only run from a real spin.</div>
+      <div class="ix-grid" id="wh-outcomes"></div>
+      <div class="scene-msg" id="wh-msg" aria-live="polite"></div>
+    </div>
+    <div class="card" style="flex:none">
+      <h3>Steam Games for "Chat picks the next game"</h3>
+      <div class="scene-sub" id="wh-steam-sub">Read from your local Steam library — installed games only.</div>
+      <div class="wh-steam" id="wh-steam"><div class="stat-label">Loading…</div></div>
     </div>
   </section>
 

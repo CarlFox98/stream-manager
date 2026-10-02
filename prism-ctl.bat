@@ -3,6 +3,7 @@ REM prism-ctl - start, stop or restart Stream Manager from anywhere local.
 REM Point a Stream Deck "System > Open" key at this file with an argument:
 REM
 REM     "...\prism-ctl.bat" restart
+REM     "...\prism-ctl.bat" undo      (revert all wheel effects)
 REM
 REM No token, no network credential: it reads data\runtime.json, which only a
 REM process already running as you can open.
