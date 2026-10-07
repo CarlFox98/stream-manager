@@ -28,13 +28,15 @@ auth = {
     "authorize_url": "", "error": "",
 }
 _lock = threading.Lock()
-_redirect_uri = "http://localhost:5000" + CALLBACK_PATH
+# Spotify rejects "localhost" redirect URIs (since 2025); loopback must be the
+# literal 127.0.0.1. Stream Manager binds 127.0.0.1, so the callback lands.
+_redirect_uri = "http://127.0.0.1:5000" + CALLBACK_PATH
 _pending = {"state": "", "verifier": ""}
 
 
 def set_server_port(port):
     global _redirect_uri
-    _redirect_uri = f"http://localhost:{port}{CALLBACK_PATH}"
+    _redirect_uri = f"http://127.0.0.1:{port}{CALLBACK_PATH}"
 
 
 def redirect_uri():
@@ -325,5 +327,6 @@ def public_status():
         "status": auth["status"],
         "authorize_url": auth["authorize_url"] if auth["status"] in ("pending", "unauthorized", "error") else "",
         "error": auth["error"],
+        "redirect_uri": _redirect_uri,
         "now": np,
     }

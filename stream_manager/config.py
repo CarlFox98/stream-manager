@@ -46,7 +46,7 @@ CONFIG_DEFAULTS = {
     "commands": {},
     # Timed chat messages (auto-posted on an interval). Managed from dashboard.
     "timers": {},
-    # Spotify now-playing integration (client id/secret + token cache).
+    # Spotify: {"client_id": "..."} (public id; the secret stays in .env).
     "spotify": {},
     # Viewer alerts: first-time chatters + new followers (see alerts.py).
     "alerts": {},
@@ -202,7 +202,21 @@ TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET", "")
 
 # Spotify now-playing (optional). Public app needs only the id (PKCE);
 # a Confidential app can also set the secret.
-SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
+def spotify_client_id(env, cfg):
+    """.env wins; otherwise config.json → spotify.client_id.
+
+    A Spotify client id is public (it ships inside every PKCE page that uses
+    it, including the PRISM now-playing widget), so it may live in config.json.
+    The client *secret* never does — that stays .env-only.
+    """
+    v = (env.get("SPOTIFY_CLIENT_ID") or "").strip()
+    if v:
+        return v
+    sp = cfg.get("spotify") if isinstance(cfg.get("spotify"), dict) else {}
+    return str(sp.get("client_id") or "").strip()
+
+
+SPOTIFY_CLIENT_ID = spotify_client_id(os.environ, config)
 SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
 
 # Optional password for LAN mode (--lan). When set, remote (non-localhost)

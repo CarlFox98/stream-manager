@@ -580,7 +580,7 @@ async function loadSpotify() {
   const body = $('#spotify-body'); if (!body) return;
   let d; try { d = await api('/api/spotify'); } catch (e) { return; }
   if (!d.configured) {
-    body.innerHTML = `<div class="stat-label">Add <code>SPOTIFY_CLIENT_ID</code> to your .env to enable now-playing. Redirect URL to register: <code>${esc(location.origin)}/auth/spotify/callback</code></div>`;
+    body.innerHTML = `<div class="stat-label">Set <code>spotify.client_id</code> in config.json (or <code>SPOTIFY_CLIENT_ID</code> in .env) and restart. Redirect URI to register in your Spotify app: <code>${esc(d.redirect_uri || 'http://127.0.0.1:5000/auth/spotify/callback')}</code></div>`;
     return;
   }
   if (d.status === 'ok') {

@@ -51,8 +51,16 @@ def lookup(user_id="", login=""):
     return None, None, None
 
 
-def add(user, user_id="", login=""):
-    """Feature a viewer. Returns (ok, message)."""
+PREVIEW_SECONDS = 15
+
+
+def add(user, user_id="", login="", preview=False):
+    """Feature a viewer. Returns (ok, message).
+
+    preview=True (the dashboard's Test button) shows the card for
+    PREVIEW_SECONDS without saving it, so a test never leaves a "Dashboard"
+    card on Starting Soon.
+    """
     name, lg, avatar = lookup(user_id, login or (user or "").lower())
     if not (name or user):
         return False, "no viewer to feature"
@@ -62,7 +70,12 @@ def add(user, user_id="", login=""):
         rows = [r for r in _load() if r.get("login") != row["login"]]
         rows.append(row)
         rows = rows[-_max():]
-        _save(rows)
+        if not preview:
+            _save(rows)
+    if preview:
+        effects.emit("featured", {"viewers": rows, "new": row["login"], "preview": PREVIEW_SECONDS},
+                     summary=None)
+        return True, f"previewed for {PREVIEW_SECONDS}s (not saved)"
     effects.emit("featured", {"viewers": rows, "new": row["login"]},
                  summary=f"★ Featured viewer: {row['name']}")
     return True, "featured"

@@ -325,7 +325,8 @@ def on_chat(login, user, text, say=None):
 
 # ── the outcomes ───────────────────────────────────────────────────────────
 def _featured(ctx):
-    return featured.add(ctx["user"], ctx.get("user_id", ""), ctx.get("login", ""))
+    return featured.add(ctx["user"], ctx.get("user_id", ""), ctx.get("login", ""),
+                        preview=bool(ctx.get("test")))
 
 
 def _dj_start(ctx):

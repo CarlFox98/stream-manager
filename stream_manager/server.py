@@ -606,7 +606,7 @@ class Handler(BaseHTTPRequestHandler):
             name = str(body.get("outcome", ""))
             if name not in outcomes.OUTCOMES:
                 self.serve_json({"ok": False, "error": "unknown outcome"}, status=400); return
-            ctx = {"user": body.get("user") or "Dashboard", "user_id": "", "login": "",
+            ctx = {"user": body.get("user") or "Dashboard", "user_id": "", "login": "", "test": True,
                    "say": chat.say if chat.status.get("connected") else None}
             missing = outcomes.why_not(name, ctx)
             if missing:

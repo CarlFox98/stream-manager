@@ -450,6 +450,22 @@ def test_wheel_endpoints(live_server, monkeypatch):
     assert _http(port, "/api/steam/mark", {"appid": "x"}, tok)[0] == 400
 
 
+def test_featured_dashboard_test_previews_without_saving(monkeypatch):
+    """The dashboard's Test button must not leave a permanent "Dashboard" card
+    on Starting Soon (seen live 2026-10-04)."""
+    monkeypatch.setattr(featured, "lookup", lambda uid="", login="": (None, None, None))
+    sent = []
+    monkeypatch.setattr(featured.effects, "emit", lambda ch, data, **k: sent.append(data))
+    ok, msg = outcomes.run("featured", {"user": "Dashboard", "user_id": "", "login": "", "test": True})
+    assert ok and "not saved" in msg
+    assert featured.current() == []
+    assert sent and sent[-1]["preview"] == featured.PREVIEW_SECONDS
+    # a real winner is still saved, with no preview flag
+    outcomes.run("featured", {"user": "Viewer", "user_id": "", "login": "viewer"})
+    assert [r["login"] for r in featured.current()] == ["viewer"]
+    assert "preview" not in sent[-1]
+
+
 # ── prism-ctl undo (Stream Deck panic key) ─────────────────────────────────
 def test_ctl_undo_posts_undo_all_with_runtime_token(monkeypatch, capsys):
     from stream_manager import ctl
@@ -481,3 +497,20 @@ def test_ctl_undo_reports_server_error(monkeypatch, capsys):
     monkeypatch.setattr(ctl, "_post", lambda *a, **k: (403, {"error": "bad token"}))
     assert ctl.main(["undo"]) == 1
     assert "bad token" in capsys.readouterr().out
+
+
+# ── Spotify setup (DJ for a song) ───────────────────────────────────────────
+def test_spotify_redirect_uses_loopback_ip_not_localhost():
+    """Spotify refuses http://localhost redirect URIs; it must be 127.0.0.1."""
+    from stream_manager import spotify
+    spotify.set_server_port(5000)
+    assert spotify.redirect_uri() == "http://127.0.0.1:5000/auth/spotify/callback"
+    assert spotify.public_status()["redirect_uri"] == spotify.redirect_uri()
+
+
+def test_spotify_client_id_env_wins_then_config():
+    from stream_manager.config import spotify_client_id
+    assert spotify_client_id({"SPOTIFY_CLIENT_ID": " envid "}, {"spotify": {"client_id": "cfg"}}) == "envid"
+    assert spotify_client_id({}, {"spotify": {"client_id": " cfgid "}}) == "cfgid"
+    assert spotify_client_id({}, {"spotify": "junk"}) == ""
+    assert spotify_client_id({}, {}) == ""
