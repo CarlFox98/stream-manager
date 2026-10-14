@@ -96,7 +96,7 @@ html,body{ width:100%; height:100%; overflow:hidden; background:transparent; fon
       else if(k==="follow"){ headline.textContent=(d.user||""); sub.textContent="just followed — welcome!"; }
       else if(k==="firstchat"){ headline.textContent=(d.user||""); sub.textContent="first time in chat — welcome! 👋"; }
       else { headline.textContent=(d.user||""); sub.textContent=tierName(d.amount)+" sub — thank you!"; }
-      banner.classList.add("show"); if(window.SMFX) SMFX.hype();
+      banner.classList.add("show"); if(window.SMFX) SMFX.hype(k);   /* kits may vary the cue by kind */
       setTimeout(function(){ banner.classList.remove("show"); }, 6000);
       setTimeout(res, 6600);
     });

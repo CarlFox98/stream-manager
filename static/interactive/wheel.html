@@ -257,6 +257,8 @@ canvas{ position:absolute; inset:0; width:100%; height:100%;
     return new Promise(function(res){
       var segs=d.segments||[], win=(typeof d.winner_index==="number")?d.winner_index:0;
       readTheme();
+      /* optional per-mode rim: a set may colour the Risky wheel's ring apart */
+      if(d.mode==="risky"){ var rr=tok("--wheel-ring-risky"); if(rr) T.ring=rr; }
       var accent=accentFor(d);
       root.style.setProperty("--accent", accent);
       card.classList.toggle("risky", d.mode==="risky");
