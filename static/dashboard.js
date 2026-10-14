@@ -171,7 +171,7 @@ function fmtUptime(secs) {
 }
 
 // ── overview: scenes ────────────────────────────────────────────────
-const SCENE_LABELS = { modern: 'Modern Neon', retro: 'Retro Win98', 'prism-holo': 'PRISM Holo', 'prism-signal': 'PRISM Signal', 'prism-soft': 'PRISM Soft Holo' };
+const SCENE_LABELS = { modern: 'Modern Neon', retro: 'Retro Win98', 'prism-holo': 'PRISM Holo', 'prism-signal': 'PRISM Signal', 'prism-soft': 'PRISM Soft Holo', 'prism-haunt': 'PRISM Haunt' };
 let sceneSwitching = false;
 function renderScenes(d) {
   const active = d.active_set, available = d.available || [];
