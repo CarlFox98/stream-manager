@@ -17,6 +17,7 @@ A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system stat
 - **Spotify now-playing** — one-click connect, a `!song` command, and a dashboard widget (optional)
 - **One-click Twitch login** — a browser window opens for you to approve; no codes to copy
 - **Start, restart and shut down without a console** — Restart and Shut Down buttons on the dashboard (two clicks, no undo), a system-tray icon that owns the process, and a `prism-ctl` command a Stream Deck key can run. Restarting re-reads `config.json` and reconnects Twitch and OBS without touching the port your browser sources point at
+- **Claude integration (optional)** — a read-only MCP server lets Claude check OBS, Twitch, preflight and stream health for you. See **[Claude (MCP server)](#claude-mcp-server)**
 - **Self-update** — checks GitHub Releases and installs from the dashboard (HTTPS-only, integrity-logged, with a backup first)
 - **Local by default & LAN-safe** — binds to `127.0.0.1`; with `--lan`, controls stay token-locked and you can require a password for remote devices
 
@@ -131,6 +132,59 @@ Restart and Shut Down are **local-only**. They require this run's session token
 *and* a request from `127.0.0.1`, so even in `--lan` mode with the dashboard
 password set, another device on your network can view the dashboard but cannot
 stop the thing running your stream.
+
+## Claude (MCP server)
+
+Stream Manager ships an optional [MCP](https://modelcontextprotocol.io) server so
+Claude can check on your stream: is OBS live, is preflight green, what is the
+health monitor saying, is a raid waiting for a shoutout. It is **read-only** in
+this release.
+
+| Tool | What it answers |
+|---|---|
+| `sm_status` | Running or not; OBS streaming/recording/scene; Twitch live, title, game, viewers; PC load |
+| `sm_preflight` | The dashboard's "am I ready to go live?" check |
+| `sm_health` | Live health monitor: alerts and every check |
+| `sm_shoutout_status` | Shoutouts on/off, pending raid, last shoutout, clip playing |
+| `sm_scene_sets` | Active overlay theme and the installed ones |
+| `sm_stream_stats` | Game and wheel stats |
+| `sm_active_effects` | Running wheel effects and rewards still owed |
+| `sm_update_check` | Installed vs latest version (asks GitHub) |
+
+**Setup** (Python 3.10+):
+
+1. `pip install -r requirements-mcp.txt`
+2. Add it to Claude's desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
+   on Windows) under `mcpServers`, with your own path:
+   ```json
+   "stream-manager": {
+     "command": "C:\\path\\to\\stream-manager\\mcp-server.bat"
+   }
+   ```
+   No `mcp-server.bat` yet (the 0.14.0 self-update can't add new files)? This
+   form does the same thing:
+   ```json
+   "stream-manager": {
+     "command": "python",
+     "args": ["-m", "stream_manager.mcp_server"],
+     "env": { "PYTHONPATH": "C:\\path\\to\\stream-manager" }
+   }
+   ```
+3. Restart Claude. Ask it "is my stream healthy?".
+
+How it stays safe:
+
+- It is a separate process that Claude launches and talks to over stdin/stdout.
+  It opens **no port**, and never starts a second copy of the app.
+- Like `prism-ctl`, it finds the running app through `data/runtime.json` and
+  talks to it on `127.0.0.1` only (proxy settings are ignored). Every tool is a
+  plain GET; the session token is never sent, returned or logged.
+- It never imports the app's config, so `.env` secrets are not even loaded into it.
+- Replies are built from allowlists, so a field added to the app later stays out
+  of Claude's context until someone decides it belongs there.
+- Viewer names, wheel labels and owed-reward text are written by viewers; the
+  server tells Claude to treat them as data, never instructions. Chat itself is
+  not exposed.
 
 ## Security
 

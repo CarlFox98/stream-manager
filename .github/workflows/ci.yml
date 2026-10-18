@@ -24,6 +24,11 @@ jobs:
           pip install pytest ruff
           # optional runtime deps so imports resolve during tests
           pip install psutil websocket-client || true
+          # the optional MCP server's SDK needs Python 3.10+; on 3.9 its
+          # protocol tests skip and the stdlib half of test_mcp_server still runs
+          if python -c "import sys; sys.exit(sys.version_info < (3, 10))"; then
+            pip install -r requirements-mcp.txt
+          fi
       - name: Lint (ruff — bugs only)
         run: ruff check .
       - name: Tests
