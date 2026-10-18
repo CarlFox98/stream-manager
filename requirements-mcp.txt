@@ -1,0 +1,7 @@
+# Optional: the MCP server (mcp-server.bat / python -m stream_manager.mcp_server),
+# which lets Claude read Stream Manager's status. Needs Python 3.10 or newer.
+# The core app doesn't use any of this; requirements.txt still covers it.
+#
+# Pinned to the 2.x line: 2.0 renamed FastMCP to MCPServer, and a future 3.0
+# may break the API the same way. Bump the ceiling after testing.
+mcp>=2.2,<3

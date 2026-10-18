@@ -28,7 +28,12 @@ def _is_trusted_url(url):
 GITHUB_API_LATEST = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 
 # Paths (relative to BASE_DIR) that an update is allowed to replace.
-SYNCED_PATHS = ["stream-manager.py", "stream_manager", "static", "requirements.txt"]
+# mcp-server.bat and requirements-mcp.txt arrived in 0.14.0. The updater that
+# installs 0.14.0 is the OLD one, with the old list, so they first land on the
+# update after that (or from the release ZIP). Missing paths are skipped on both
+# sides, so an install without them is fine.
+SYNCED_PATHS = ["stream-manager.py", "stream_manager", "static", "requirements.txt",
+                "requirements-mcp.txt", "mcp-server.bat"]
 BACKUP_DIR = os.path.join(BASE_DIR, ".update-backup")
 
 update_state = {"checked": False, "latest": None, "current": __version__,
