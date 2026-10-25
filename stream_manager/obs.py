@@ -16,7 +16,9 @@ _OBS_PROC_NAMES = ("obs64.exe", "obs32.exe", "obs.exe", "obs")
 
 def get_obs_status(state):
     if get_obs_ws_status(state):
+        state["obs"]["ws"] = True
         return
+    state["obs"]["ws"] = False
     if _get_obs_status_psutil(state):
         return
     _get_obs_status_tasklist(state)

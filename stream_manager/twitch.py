@@ -98,6 +98,7 @@ def get_twitch_status(state):
         })
         with urllib.request.urlopen(req, timeout=5) as r:
             data = json.loads(r.read())
+            state["twitch"]["checked_at"] = time.time()
             if data.get("data"):
                 s = data["data"][0]
                 state["twitch"]["live"] = True
