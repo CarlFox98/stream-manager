@@ -12,7 +12,7 @@ a restart and an impatient streamer. Three rules make that hold:
    in slow mode before Slow Mode landed, it stays in slow mode afterwards.
 3. **One effect per (kind, target).** A second hit on an active effect extends
    its timer instead of stacking a second copy whose snapshot would be the
-   *already-changed* state — that is how a flip-on-a-flip gets stuck upside down.
+   *already-changed* state; that is how a flip-on-a-flip gets stuck upside down.
 
 Short effects are reverted at shutdown and, if a crash left any behind, at
 startup. "Long" effects (VIP for 7 days) persist across restarts and are only
@@ -30,7 +30,7 @@ _kinds = {}       # kind -> {"capture", "apply", "revert", "long", "label"}
 _active = {}      # id -> entry
 _stop = threading.Event()
 _thread = None
-_listeners = []   # callables(entries) — the status overlay feed
+_listeners = []   # callables(entries): the status overlay feed
 
 
 def register(kind, apply, revert, capture=None, long=False, label=None):
@@ -65,7 +65,7 @@ def _load_file():
     except FileNotFoundError:
         return []
     except Exception as e:
-        print(f"[timed] active-effects.json unreadable ({e}) — starting empty")
+        print(f"[timed] active-effects.json unreadable ({e}), starting empty")
         return []
 
 
@@ -113,7 +113,7 @@ def start(kind, target, seconds, params=None, label="", user=""):
         if _find(kind, target):            # lost a race with another start()
             return start(kind, target, seconds, params, label, user)
         _active[entry["id"]] = entry
-    _save()                                # persisted BEFORE apply — rule 1
+    _save()                                # persisted BEFORE apply (rule 1)
     try:
         ok, msg = k["apply"](target, params, snapshot)
     except Exception as e:
@@ -180,7 +180,7 @@ def tick(now=None):
                 give_up = e["tries"] >= _MAX_REVERT_TRIES
                 if give_up:
                     _active.pop(e["id"], None)
-                    print(f"[timed] gave up reverting {e['kind']}:{e['target']} — undo it by hand")
+                    print(f"[timed] gave up reverting {e['kind']}:{e['target']}; undo it by hand")
                 else:
                     e["until"] = now + 5 * e["tries"]      # back off and retry
     if due:
@@ -191,7 +191,7 @@ def tick(now=None):
 def recover():
     """Startup: undo short effects a crash left applied; keep long ones.
 
-    Entries persisted before apply() ran ("applied": false) are reverted too —
+    Entries persisted before apply() ran ("applied": false) are reverted too:
     we cannot know whether apply() got as far as changing anything, and
     reverting to the captured snapshot is harmless either way.
     """

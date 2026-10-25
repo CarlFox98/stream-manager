@@ -1,4 +1,4 @@
-"""EventSub over WebSocket — near-instant redemptions + raid/bits/sub hype.
+"""EventSub over WebSocket: near-instant redemptions + raid/bits/sub hype.
 
 This is an optional upgrade over the redemption *polling* in redeems.py. When
 the `websocket-client` package is installed (already an optional dependency for
@@ -185,7 +185,7 @@ def _run_once():
                 status["connected"] = made > 0
                 if made > 0:
                     redeems.status["transport"] = "eventsub"
-                    print(f"[eventsub] connected — {made} subscriptions active")
+                    print(f"[eventsub] connected, {made} subscriptions active")
                 else:
                     status["error"] = "no subscriptions created (check scopes/affiliate)"
                     break

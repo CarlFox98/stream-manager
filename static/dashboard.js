@@ -1,4 +1,4 @@
-/* Stream Manager dashboard — vanilla, no build step. */
+/* Stream Manager dashboard: vanilla, no build step. */
 (() => {
 'use strict';
 
@@ -12,12 +12,12 @@ const fmtNum = n => (Number(n) || 0).toLocaleString();
 let online = true;
 // Declared up here, not next to the restart code below: setOnline() reads it,
 // and `typeof` does NOT protect a `let` that hasn't been initialised yet.
-let lcMode = null;   // null | 'restart' | 'shutdown' — set once, never cleared
+let lcMode = null;   // null | 'restart' | 'shutdown'; set once, never cleared
 function setOnline(v) {
   if (v === online) return;
   online = v;
   // Once a restart or shutdown is under way the banner is saying something more
-  // useful than "connection lost", and the gap is expected — so it keeps the
+  // useful than "connection lost", and the gap is expected, so it keeps the
   // message lcFire put there instead of being overwritten with a false alarm.
   if (!lcMode) connBanner(CONN_LOST, !v);
   // #conn-pill is the top bar's; .js-conn is its narrow-window twin in the sidebar.
@@ -62,7 +62,7 @@ function showTab(name) {
   $$('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   try { localStorage.setItem('sm_tab', name); } catch (e) {}
   if (name === 'commands') loadCommands();
-  // Don't re-fetch over unsaved edits — that used to silently throw them away
+  // Don't re-fetch over unsaved edits; that used to silently throw them away
   // whenever you flipped to another tab and back.
   if (name === 'config' && !cfgDirty.size) loadConfig();
   if (name === 'timers') loadTimers();
@@ -95,15 +95,15 @@ document.addEventListener('keydown', e => {
 
 // ── overview: status ────────────────────────────────────────────────
 let lastLogHead = null;
-// Log tab state — up here because render() (which assigns lastStatus) can run
+// Log tab state. It lives up here because render() (which assigns lastStatus) can run
 // before a `let` further down would be initialised.
 let lastStatus = null, logEventsOnly = true;
 try { logEventsOnly = localStorage.getItem('sm_log_events') !== '0'; } catch (e) {}
 let srvStartedAt = 0;
 function renderStatus(s) {
   // The session token is regenerated on every server start and baked into this
-  // page, so a restart this page did not initiate — from prism-ctl, the Stream
-  // Deck key, the tray menu, or a second dashboard tab — leaves it holding a
+  // page, so a restart this page did not initiate (from prism-ctl, the Stream
+  // Deck key, the tray menu, or a second dashboard tab) leaves it holding a
   // dead token. /api/status is a GET and keeps answering, so nothing looked
   // wrong: the page stayed up and every POST quietly 403'd. started_at is the
   // only thing that changes, so it is what we watch.
@@ -124,8 +124,8 @@ function renderStatus(s) {
   const live = s.twitch.live;
   $('#twitch-dot').className = 'status-dot ' + (live ? 'on' : 'off');
   $('#twitch-label').textContent = live ? 'LIVE' : 'Offline';
-  $('#twitch-title').textContent = s.twitch.title || '—';
-  $('#twitch-game').textContent = s.twitch.game || '—';
+  $('#twitch-title').textContent = s.twitch.title || '-';
+  $('#twitch-game').textContent = s.twitch.game || '-';
   $('#twitch-viewers').textContent = live ? s.twitch.viewers + ' viewers' : '';
   $('#twitch-uptime').textContent = live ? s.twitch.uptime : '';
   $('#twitch-card').classList.toggle('card-live', live);
@@ -139,7 +139,7 @@ function renderStatus(s) {
   $('#server-uptime').textContent = s.server.uptime || '0s';
   $('#server-port').textContent = ':' + s.server.port;
   // Read the running version rather than trusting a number typed into the
-  // markup — that one was two releases behind and said so on every page load.
+  // markup; that one was two releases behind and said so on every page load.
   if (s.server.version) $$('#ver-chip, .js-ver').forEach(vc => { vc.textContent = 'v' + s.server.version; });
 
   // No supervisor means exit code 42 goes nowhere and Restart is really just
@@ -174,7 +174,7 @@ function renderLog(force) {
   if (!force && head === lastLogHead) return;
   lastLogHead = head;
   if (!lines.length) { $('#log-box').innerHTML = `<div class="log-entry"><span class="log-text">${logEventsOnly
-    ? 'No events since Stream Manager started — only served files so far. Switch off “Hide served files” to see them.'
+    ? 'No events since Stream Manager started, only served files so far. Switch off “Hide served files” to see them.'
     : 'Nothing logged yet.'}</span></div>`; return; }
   {
     $('#log-box').innerHTML = lines.map(r => {
@@ -214,7 +214,7 @@ async function switchScene(name) {
     msg.textContent = d.message || (d.ok ? 'Switched.' : 'Switch failed.');
     msg.classList.add(d.ok ? 'ok' : 'err');
     renderScenes(d);
-    if (d.ok) { msg.textContent += ' — refresh your OBS browser sources.'; toast('Scene set → ' + (SCENE_LABELS[name] || name), 'ok'); }
+    if (d.ok) { msg.textContent += '. Refresh your OBS browser sources.'; toast('Scene set → ' + (SCENE_LABELS[name] || name), 'ok'); }
   } catch (e) { msg.className = 'scene-msg err'; msg.textContent = 'Switch request failed.'; }
   finally { sceneSwitching = false; setTimeout(() => { if (!sceneSwitching) { msg.className = 'scene-msg'; msg.textContent = ''; } }, 6000); }
 }
@@ -238,7 +238,7 @@ async function installUpdate() {
     const { data: d } = await post('/api/update/install', { confirm: true });
     msg.textContent = d.message || d.error || (d.ok ? 'Installed.' : 'Failed.');
     msg.classList.add(d.ok ? 'ok' : 'err');
-    if (d.ok) { msg.textContent += ' Restart to apply.'; toast('Update installed — restart to apply', 'ok'); }
+    if (d.ok) { msg.textContent += ' Restart to apply.'; toast('Update installed. Restart to apply', 'ok'); }
     else btn.disabled = false;
   } catch (e) { msg.className = 'update-msg err'; msg.textContent = 'Install request failed.'; btn.disabled = false; }
 }
@@ -269,18 +269,18 @@ async function renderInteractive() {
   }
   if (st === 'ok') {
     dot.className = 'status-dot on';
-    label.textContent = 'Authorized as ' + (d.auth.login || '—');
+    label.textContent = 'Authorized as ' + (d.auth.login || '-');
     const chat = d.chat?.connected ? 'chat connected' : 'chat connecting…';
     const rd = d.redeems?.ready ? 'redeems ready' : 'redeems setting up…';
     hint.textContent = chat + ' · ' + rd + (d.chat?.channel ? ' · #' + d.chat.channel : '');
     logoutBtn.style.display = 'inline-block';
   } else if (st === 'pending') {
     dot.className = 'status-dot warn'; label.textContent = 'Waiting for Twitch…';
-    hint.innerHTML = 'A browser window opened — click <strong>Authorize</strong> there.' +
+    hint.innerHTML = 'A browser window opened. Click <strong>Authorize</strong> there.' +
       (d.auth.authorize_url ? ` &nbsp;<a href="${esc(d.auth.authorize_url)}" target="_blank" rel="noopener">Reopen login</a>` : '');
   } else if (st === 'unauthorized' || st === 'error') {
     dot.className = 'status-dot warn'; label.textContent = 'Connect your Twitch account';
-    hint.textContent = d.auth?.error || 'One click — a browser window will open for you to approve access.';
+    hint.textContent = d.auth?.error || 'One click: a browser window will open for you to approve access.';
     btn.textContent = 'Login with Twitch'; btn.style.display = 'inline-block';
   } else if (st === 'unconfigured') {
     dot.className = 'status-dot off'; label.textContent = 'Not configured';
@@ -337,7 +337,7 @@ function renderTimers() {
         <div><span class="col-label">Every (min)</span><input class="field num" type="number" min="1" data-tf="interval" value="${Number(t.interval) || 15}"></div>
         <div><span class="col-label">Min lines</span><input class="field num" type="number" min="0" data-tf="min_lines" value="${Number(t.min_lines) || 0}"></div>
       </div>
-    </div>`).join('') : '<div class="stat-label">No timers yet — add one below.</div>';
+    </div>`).join('') : '<div class="stat-label">No timers yet. Add one below.</div>';
 }
 function gatherTimers() {
   timerData.list = $$('#timer-list .timer-row').map(row => ({
@@ -363,7 +363,7 @@ async function loadQuotes() {
   let d; try { d = await api('/api/quotes'); } catch (e) { $('#quote-list').innerHTML = '<div class="stat-label">Could not load.</div>'; return; }
   const qs = d.quotes || [];
   // Ids are stable across deletions, so after a delete the count and the
-  // highest number disagree — say both rather than look like a miscount.
+  // highest number disagree, so say both rather than look like a miscount.
   const maxId = qs.reduce((m, q) => Math.max(m, Number(q.id) || 0), 0);
   $('#quote-count').textContent = !d.count ? ''
     : maxId > d.count ? `(${d.count} · #1–${maxId})` : `(${d.count})`;
@@ -703,7 +703,7 @@ function whChance(w, s) {
 function whOutcomeOpts(cur) {
   const keys = Object.keys(OUTCOME_LABELS);
   if (cur && !keys.includes(cur)) keys.push(cur);
-  return '<option value="">— label only —</option>' + keys.map(k =>
+  return '<option value="">(label only)</option>' + keys.map(k =>
     `<option value="${esc(k)}"${k === cur ? ' selected' : ''}>${esc(OUTCOME_LABELS[k] || k)}</option>`).join('');
 }
 function renderWheelEditor() {
@@ -840,7 +840,7 @@ async function loadSpotify() {
   if (d.status === 'ok') {
     const n = d.now || {};
     const track = n.title
-      ? `<div class="now-track">🎵 <strong>${esc(n.title)}</strong> — ${esc(n.artist || '')}${n.url ? ` &nbsp;<a href="${esc(n.url)}" target="_blank" rel="noopener">open</a>` : ''}</div>`
+      ? `<div class="now-track">🎵 <strong>${esc(n.title)}</strong>${n.artist ? ' by ' + esc(n.artist) : ''}${n.url ? ` &nbsp;<a href="${esc(n.url)}" target="_blank" rel="noopener">open</a>` : ''}</div>`
       : '<div class="stat-label">Nothing playing right now.</div>';
     body.innerHTML = `<div class="auth-row"><span class="status-dot on"></span>Connected</div>${track}
       <div class="auth-actions"><button class="scene-btn" style="flex:0 0 auto" data-act="sp-logout">Disconnect</button></div>`;
@@ -872,7 +872,7 @@ window.addEventListener('resize', scalePreview);
 // ── restart / shutdown ──────────────────────────────────────────────
 // Two clicks to fire, because there is no undo: the second click stops the
 // thing that is currently running your stream.
-const CONN_LOST = 'Connection to Stream Manager lost — retrying…';
+const CONN_LOST = 'Connection to Stream Manager lost. Retrying…';
 let lcArmed = null, lcArmTimer = null;
 
 function connBanner(msg, show) {
@@ -904,21 +904,21 @@ function lcArm(action) {
   lcFire(action);
 }
 async function lcFire(action) {
-  // The pid is how we tell "it came back" from "it never left" — the old
+  // The pid is how we tell "it came back" from "it never left": the old
   // process keeps answering for the fraction of a second it takes to flush
   // this very response.
   let pidBefore = null;
   try { pidBefore = (await (await fetch('/api/ping', { cache: 'no-store' })).json()).pid; } catch (e) {}
 
   // Not bare: lcFire is called un-awaited, so a rejected fetch here used to be
-  // an unhandled promise — lcMode never set, both buttons still live, nothing
+  // an unhandled promise: lcMode never set, both buttons still live, nothing
   // on screen, and the server already on its way down. If the request did land,
   // the started_at watch above reloads the page when it comes back.
   let r;
   try {
     r = await post('/api/lifecycle/' + action, { confirm: true });
   } catch (e) {
-    toast('Couldn\'t reach Stream Manager — it may be stopping anyway.', 'bad');
+    toast('Couldn\'t reach Stream Manager; it may be stopping anyway.', 'bad');
     return;
   }
   if (!r.ok || !r.data.ok) {
@@ -935,7 +935,7 @@ async function lcFire(action) {
     connBanner('Stream Manager has shut down. Start it again from the launcher.');
     return;
   }
-  connBanner('Restarting Stream Manager — this page reloads by itself when it\'s back.');
+  connBanner('Restarting Stream Manager. This page reloads by itself when it\'s back.');
   lcWait(pidBefore);
 }
 async function lcWait(pidBefore) {
@@ -950,7 +950,7 @@ async function lcWait(pidBefore) {
     if (!p || !p.pid) { sawGap = true; continue; }
     if (sawGap || (pidBefore && p.pid !== pidBefore)) { location.reload(); return; }
   }
-  connBanner('Stream Manager hasn\'t come back — check the launcher window.');
+  connBanner('Stream Manager hasn\'t come back. Check the launcher window.');
 }
 
 // ── Wheel tab ───────────────────────────────────────────────────────
@@ -1007,7 +1007,7 @@ async function whOwed(id, st) { await post('/api/owed/resolve', { id, status: st
 async function whFeatRm(login) { await post('/api/featured/remove', { login }); renderWheel(); }
 async function whTest(outcome) {
   const r = await post('/api/wheel/test', { outcome, chat: testChat });
-  const m = $('#wh-msg'); if (m) m.textContent = r.ok ? `✓ ${OUTCOME_LABELS[outcome]} — ${r.data.message || 'done'}` : `✗ ${r.data.error || r.data.message || 'failed'}`;
+  const m = $('#wh-msg'); if (m) m.textContent = r.ok ? `✓ ${OUTCOME_LABELS[outcome]}: ${r.data.message || 'done'}` : `✗ ${r.data.error || r.data.message || 'failed'}`;
   renderWheel();
 }
 async function renderSteam() {
@@ -1133,7 +1133,7 @@ function renderMonitor(d) {
     hmSeen.forEach(id => { if (!ids.has(id)) toast('Recovered: ' + id, 'ok'); });
   } else {
     // The first sample after a page load reports what is ALREADY wrong, which
-    // is not news — it is the current state. Without this, opening or
+    // is not news; it is the current state. Without this, opening or
     // refreshing the dashboard while any alert is live toasts every one of
     // them at once and beeps for each bad one. Take it as the baseline.
     hmPrimed = true;
@@ -1144,9 +1144,9 @@ function renderMonitor(d) {
 
   const sub = $('#hm-sub');
   if (sub) {
-    if (!m.obs_ws) sub.textContent = 'OBS WebSocket: ' + (m.obs_ws_error || 'not reachable — enable it in OBS → Tools → WebSocket Server Settings.');
+    if (!m.obs_ws) sub.textContent = 'OBS WebSocket: ' + (m.obs_ws_error || 'not reachable. Enable it in OBS → Tools → WebSocket Server Settings.');
     else if (m.live) sub.textContent = `Live · ${fmtUptime(m.duration_sec || 0)} · monitoring every few seconds`;
-    else sub.textContent = 'OBS connected · not streaming — stream metrics appear when you go live.';
+    else sub.textContent = 'OBS connected · not streaming. Stream metrics appear when you go live.';
   }
 
   const lv = {};
@@ -1159,7 +1159,7 @@ function renderMonitor(d) {
         return `<div class="metric ${cls}"><div class="m-label">${esc(label)}</div>` +
                `<div class="m-val">${esc(fmt(Number(m[k])))}` +
                (unit ? `<span class="unit">${esc(unit)}</span>` : '') + `</div></div>`;
-      }).join('') || '<div class="stat-label">No metrics yet — waiting for the first sample.</div>';
+      }).join('') || '<div class="stat-label">No metrics yet; waiting for the first sample.</div>';
   }
 
   const list = $('#hm-checks');
@@ -1183,7 +1183,7 @@ async function runPreflight() {
   if (list) list.innerHTML = '';
   let d;
   try { d = await api('/api/health/preflight'); }
-  catch (e) { if (sum) { sum.textContent = 'Preflight failed — ' + e.message; sum.style.color = 'var(--err)'; } return; }
+  catch (e) { if (sum) { sum.textContent = 'Preflight failed: ' + e.message; sum.style.color = 'var(--err)'; } return; }
   if (sum) {
     sum.textContent = d.summary || '';
     sum.style.color = !d.ready ? 'var(--err)' : (d.warnings ? 'var(--warn)' : 'var(--ok)');
@@ -1195,7 +1195,7 @@ async function runPreflight() {
       `<span class="chk-label">${esc(i.label)}</span>` +
       `<span class="chk-msg">${esc(i.message)}</span></div>`).join('');
   }
-  toast(d.ready ? 'Preflight passed — ready to stream' : 'Preflight found blockers',
+  toast(d.ready ? 'Preflight passed, ready to stream' : 'Preflight found blockers',
         d.ready ? 'ok' : 'err');
 }
 

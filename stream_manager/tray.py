@@ -1,4 +1,4 @@
-"""System-tray supervisor — owns the Stream Manager process.
+"""System-tray supervisor: owns the Stream Manager process.
 
 The app can't restart itself: something outside it has to be alive when it
 exits to start it again. That's this. It spawns stream-manager.py as a child,
@@ -6,7 +6,7 @@ waits, and relaunches whenever the child exits with lifecycle.EXIT_RESTART.
 
 Restart and Quit from the menu go through the same HTTP endpoints the dashboard
 buttons use, NOT through terminate(). Killing the child would skip the graceful
-stop and drop cooldowns, spin history and session stats on the floor — which is
+stop and drop cooldowns, spin history and session stats on the floor, which is
 precisely the bug the shared teardown in cli.py exists to prevent.
 
     python -m stream_manager.tray
@@ -55,14 +55,14 @@ class Supervisor:
                 code = self.proc.wait()
                 if self.stopping or code != EXIT_RESTART:
                     if not self.stopping:
-                        print(f"[tray] Stream Manager exited with code {code} — not restarting.")
+                        print(f"[tray] Stream Manager exited with code {code}; not restarting.")
                     break
                 print("[tray] Stream Manager asked to restart.")
         finally:
             self._done.set()
 
     def _current(self):
-        """The child as of right now — never captured once and reused."""
+        """The child as of right now, never captured once and reused."""
         with self._lock:
             return self.proc
 
@@ -92,7 +92,7 @@ class Supervisor:
         """Stop the child for good. terminate() is the last resort, not step two.
 
         The graceful request is retried, not asked once, because live_instance()
-        answers "no" for any child that is alive but not yet serving — and
+        answers "no" for any child that is alive but not yet serving, and
         startup is several seconds of OBS and Twitch calls, longer on a
         first-run device login. Deciding from one failed probe meant
         TerminateProcess on a perfectly healthy child, which skips the save
@@ -122,7 +122,7 @@ class Supervisor:
 
         proc = self._current()
         if proc is not None and proc.poll() is None:
-            print("[tray] Stream Manager didn't stop in time — terminating.")
+            print("[tray] Stream Manager didn't stop in time; terminating.")
             proc.terminate()
             try:
                 proc.wait(timeout=5)
@@ -177,7 +177,7 @@ def run(args=()):
     )
 
     # If the child dies on its own (a crash, or Ctrl+C in its window), the tray
-    # is the only thing left running — and an icon supervising nothing is worse
+    # is the only thing left running, and an icon supervising nothing is worse
     # than no icon, because it looks like everything is fine.
     def _watch():
         sup._done.wait()

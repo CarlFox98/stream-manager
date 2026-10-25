@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="sm-token" content="__SM_TOKEN__">
 <title>Stream Manager</title>
-<!-- PRISM's own fonts (Space Grotesk + JetBrains Mono), vendored with the overlays — no network needed. -->
+<!-- PRISM's own fonts (Space Grotesk + JetBrains Mono), vendored with the overlays, so no network is needed. -->
 <link rel="stylesheet" href="/overlays/PRISM/fonts/prism-fonts.css">
 <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body>
 <div class="health-banner" id="health-banner" role="alert"></div>
-<div class="conn-banner" id="conn-banner" role="status">Connection to Stream Manager lost — retrying…</div>
+<div class="conn-banner" id="conn-banner" role="status">Connection to Stream Manager lost. Retrying…</div>
 <div class="toast-wrap" id="toast-wrap" aria-live="polite"></div>
 
 <aside class="sidebar">
@@ -24,7 +24,7 @@
        so the page doesn't open with two "Stream Manager" cards. -->
   <div class="side-compact">
     <span class="ver-chip js-ver"></span>
-    <div class="conn-pill js-conn" title="This page's connection to Stream Manager — not your Twitch stream status"><span class="status-dot on"></span><span class="js-conn-text">Connected</span></div>
+    <div class="conn-pill js-conn" title="This page's connection to Stream Manager, not your Twitch stream status"><span class="status-dot on"></span><span class="js-conn-text">Connected</span></div>
   </div>
   <div class="side-block">
     <div class="side-label">Server</div>
@@ -42,7 +42,7 @@
       <span class="tag">Control Center</span>
       <span class="ver-chip" id="ver-chip"></span>
     </div>
-    <div class="conn-pill" id="conn-pill" title="This page's connection to Stream Manager — not your Twitch stream status"><span class="status-dot on"></span><span id="conn-text">Connected</span></div>
+    <div class="conn-pill" id="conn-pill" title="This page's connection to Stream Manager, not your Twitch stream status"><span class="status-dot on"></span><span id="conn-text">Connected</span></div>
   </header>
 
   <nav class="tabs" id="tabs" role="tablist">
@@ -72,8 +72,8 @@
       <div class="card" id="twitch-card">
         <h3>Twitch stream</h3>
         <div class="status-line"><span class="status-dot" id="twitch-dot"></span><span id="twitch-label">Checking…</span></div>
-        <div class="twitch-title" id="twitch-title">—</div>
-        <div class="twitch-game" id="twitch-game">—</div>
+        <div class="twitch-title" id="twitch-title">-</div>
+        <div class="twitch-game" id="twitch-game">-</div>
         <div class="stat-value" id="twitch-viewers" style="font-size:24px"></div>
         <div class="stat-label" id="twitch-uptime"></div>
       </div>
@@ -86,13 +86,13 @@
         </div>
         <div class="bar-bg"><div class="bar-fill" id="ram-bar" style="width:0%"></div></div>
         <div class="stat-label" id="ram-pct-label">0% used</div>
-        <div class="stat-label" style="margin-top:8px">GPU: <span id="gpu-name" style="color:var(--dim)">—</span></div>
+        <div class="stat-label" style="margin-top:8px">GPU: <span id="gpu-name" style="color:var(--dim)">-</span></div>
       </div>
     </div>
 
     <div class="card update-card" id="update-card" style="flex:none">
       <h3>Update available</h3>
-      <div class="update-ver" id="update-ver">—</div>
+      <div class="update-ver" id="update-ver">-</div>
       <div class="update-sub">A newer version is on GitHub. Your current files are backed up before installing.</div>
       <button class="btn-primary" id="update-btn" data-act="update-install">Download &amp; Install</button>
       <div class="update-msg" id="update-msg" aria-live="polite"></div>
@@ -108,7 +108,7 @@
 
     <div class="card" style="flex:none">
       <h3>Overlay URLs</h3>
-      <div class="scene-sub">Point OBS at these — they stay the same across theme switches.</div>
+      <div class="scene-sub">Point OBS at these; they stay the same across theme switches.</div>
       <div class="url-list">
         <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/overlays/active/starting-soon.html</code><span class="hint">Copy</span></div>
         <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/overlays/active/be-right-back.html</code><span class="hint">Copy</span></div>
@@ -131,7 +131,7 @@
   <!-- ── Stream Health ────────────────────────────────────────── -->
   <section class="tab-panel" id="tab-health">
     <div class="card" style="flex:none">
-      <h3>Preflight — ready to stream?</h3>
+      <h3>Preflight: ready to stream?</h3>
       <div class="scene-sub">Checks auth, chat, EventSub, OBS, overlays and disk before you go live.</div>
       <div class="save-row">
         <button class="btn-primary" data-act="preflight">Run preflight check</button>
@@ -194,7 +194,7 @@
 
     <div class="card" style="flex:none">
       <h3>Live overlay preview</h3>
-      <div class="scene-sub">Watch your overlays react — the Quick Test buttons above show here too. (This is a live view of the real overlay.)</div>
+      <div class="scene-sub">Watch your overlays react. The Quick Test buttons above show here too. (This is a live view of the real overlay.)</div>
       <div class="preview-tabs" id="preview-tabs">
         <button class="scene-btn preview-btn active" data-preview="wheel">Wheel</button>
         <button class="scene-btn preview-btn" data-preview="coinflip">Coin / 50-50</button>
@@ -238,7 +238,7 @@
     <div class="row">
       <div class="card">
         <h3>Active effects</h3>
-        <div class="scene-sub">Everything a spin turned on. Each one undoes itself on its timer — or now.</div>
+        <div class="scene-sub">Everything a spin turned on. Each one undoes itself on its timer, or now.</div>
         <div class="ix-feed" id="wh-fx"><div class="stat-label">Nothing active.</div></div>
         <div class="auth-actions"><button class="btn-primary" data-act="fx-undo-all">⟲ Undo all effects</button></div>
       </div>
@@ -270,7 +270,7 @@
     </div>
     <div class="card" style="flex:none">
       <h3>Steam games for “Chat picks the next game”</h3>
-      <div class="scene-sub" id="wh-steam-sub">Read from your local Steam library — installed games only.</div>
+      <div class="scene-sub" id="wh-steam-sub">Read from your local Steam library (installed games only).</div>
       <div class="wh-steam" id="wh-steam"><div class="stat-label">Loading…</div></div>
     </div>
   </section>
@@ -336,7 +336,7 @@
   <section class="tab-panel" id="tab-config">
     <div class="card" style="flex:none">
       <h3>Settings</h3>
-      <div class="scene-sub">Edits save to <code>config.json</code> and apply live — no restart needed.</div>
+      <div class="scene-sub">Edits save to <code>config.json</code> and apply live, no restart needed.</div>
       <div id="cfg-root"><div class="stat-label">Loading…</div></div>
       <div class="cfg-savebar" id="cfg-savebar" role="status">
         <span id="cfg-savebar-text">Unsaved changes</span>

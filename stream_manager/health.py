@@ -1,4 +1,4 @@
-"""Stream Health Monitor — catch problems before your viewers do.
+"""Stream Health Monitor: catch problems before your viewers do.
 
 Polls OBS (over obs-websocket) plus Stream Manager's own subsystems and turns
 them into a set of named checks, each `ok` / `warn` / `bad`. When a check goes
@@ -8,11 +8,11 @@ so you can review a stream afterwards.
 
 The metrics that matter most are the ones that diagnose dropped frames:
 
-  * network drops  — GetStreamStatus.outputSkippedFrames / outputTotalFrames
+  * network drops:   GetStreamStatus.outputSkippedFrames / outputTotalFrames
                      (OBS's "dropped frames due to insufficient bandwidth")
-  * congestion     — GetStreamStatus.outputCongestion (0..1)
-  * rendering lag  — GetStats.renderSkippedFrames  / renderTotalFrames  (GPU)
-  * encoding lag   — GetStats.outputSkippedFrames  / outputTotalFrames  (encoder)
+  * congestion:      GetStreamStatus.outputCongestion (0..1)
+  * rendering lag:   GetStats.renderSkippedFrames  / renderTotalFrames  (GPU)
+  * encoding lag:    GetStats.outputSkippedFrames  / outputTotalFrames  (encoder)
 
 Rates are measured **between polls**, not cumulatively, so a rough patch early
 on doesn't mask a healthy stream later (and vice versa).
@@ -82,8 +82,8 @@ def _starting_up():
 
     Twitch auth loads its token and the IRC client completes CAP + JOIN a moment
     after the process starts, so a sample taken immediately finds both down.
-    Reporting those as `bad` turns an ordinary startup into two raised alerts —
-    a log entry, a banner, a toast and a beep — on every single launch, which is
+    Reporting those as `bad` turns an ordinary startup into two raised alerts
+    (a log entry, a banner, a toast and a beep) on every single launch, which is
     how you learn to ignore the banner on the launch that matters.
     """
     from .state import state
@@ -140,19 +140,19 @@ def _obs_checks(sample, checks, metrics):
             return 0.0 if ds <= 0 else 100.0
         return max(0.0, min(100.0, (ds / dt) * 100.0))
 
-    # network drops — the one that ruined last night's stream
+    # network drops: the one that ruined last night's stream
     if live:
         drop = rate("out_skipped", "out_total")
         if drop is not None:
             metrics["dropped_pct"] = round(drop, 2)
             lvl = _level(drop, float(cfg("dropped_warn")), float(cfg("dropped_bad")))
             checks.append(_chk("dropped", "Dropped frames (network)", lvl,
-                               f"{drop:.1f}% of frames dropped — upload can't keep up"
+                               f"{drop:.1f}% of frames dropped; upload can't keep up"
                                if lvl != "ok" else f"{drop:.1f}%", round(drop, 2), "%"))
         cong = metrics["congestion"]
         lvl = _level(cong, float(cfg("congestion_warn")), float(cfg("congestion_bad")))
         checks.append(_chk("congestion", "Network congestion", lvl,
-                           f"congestion {cong:.2f} — connection is struggling" if lvl != "ok"
+                           f"congestion {cong:.2f}; connection is struggling" if lvl != "ok"
                            else f"{cong:.2f}", cong))
         if stream.get("outputReconnecting"):
             checks.append(_chk("reconnecting", "Stream reconnecting", "bad",
@@ -211,7 +211,7 @@ def _note_live(live):
         try:
             from . import alerts
             n = alerts.reset_stream()
-            print(f"[health] stream started — welcome list cleared ({n} viewer(s))")
+            print(f"[health] stream started, welcome list cleared ({n} viewer(s))")
         except Exception as e:
             print(f"[health] stream-start reset failed: {e}")
         _log({"event": "stream_start"})
@@ -244,7 +244,7 @@ def _bitrate_check(metrics, checks):
     target = float(cfg("target_bitrate_kbps") or 0)
     if target <= 0:
         # Learn the target: the highest sustained rate this stream has reached.
-        # Guard against catch-up bursts — when a stall clears, OBS flushes its
+        # Guard against catch-up bursts: when a stall clears, OBS flushes its
         # buffer and one interval can measure far above the real bitrate. Letting
         # that set the peak would leave every later sample looking "degraded".
         if kbps > _peak_kbps and (_peak_kbps == 0 or kbps <= _peak_kbps * 1.5):
@@ -252,7 +252,7 @@ def _bitrate_check(metrics, checks):
         target = _peak_kbps
     metrics["target_kbps"] = int(target)
     if target < 500 or now - _live_since < float(cfg("bitrate_grace_sec")):
-        return                    # still ramping up — don't cry wolf
+        return                    # still ramping up, don't cry wolf
     pct = min((kbps / target) * 100.0, 100.0)
     metrics["bitrate_pct"] = round(pct, 1)
     lvl = _level(pct, float(cfg("bitrate_warn_pct")), float(cfg("bitrate_bad_pct")),
@@ -260,7 +260,7 @@ def _bitrate_check(metrics, checks):
     if lvl == "ok":
         msg = f"{int(kbps)} kbps ({pct:.0f}% of target)"
     else:
-        msg = (f"only {int(kbps)} kbps of {int(target)} — upload can't sustain your "
+        msg = (f"only {int(kbps)} kbps of {int(target)}; upload can't sustain your "
                f"bitrate, so OBS is shipping a lower-quality picture")
     checks.append(_chk("bitrate", "Sustained bitrate", lvl, msg, int(kbps), "kbps"))
 
@@ -276,7 +276,7 @@ _last_mic_device = None
 
 
 def _audio_checks(sample, checks, metrics):
-    """Muted mic and mid-stream device swaps — the two silent stream-killers.
+    """Muted mic and mid-stream device swaps, the two silent stream-killers.
 
     The OBS log from 2026-09-02 shows Mic/Aux bound to the Windows *default*
     device, so it flipped between the HyperX Quadcast, an Oculus virtual device
@@ -302,7 +302,7 @@ def _audio_checks(sample, checks, metrics):
         metrics["mic_device"] = device
         if device == "default":
             checks.append(_chk("mic_device", "Mic device binding", "warn",
-                               f"{mic_name} follows the Windows default device — it will "
+                               f"{mic_name} follows the Windows default device, so it will "
                                f"switch mid-stream when a headset connects"))
         elif _last_mic_device is not None and device and device != _last_mic_device:
             checks.append(_chk("mic_device", "Mic device binding", "warn",
@@ -311,7 +311,7 @@ def _audio_checks(sample, checks, metrics):
             _last_mic_device = device
     else:
         checks.append(_chk("mic", "Microphone", "warn",
-                           f"no OBS input named '{mic_name}' — set health.mic_input"))
+                           f"no OBS input named '{mic_name}'; set health.mic_input"))
 
     others = [n for n in audio.get("muted_inputs", []) if n != mic_name]
     if others:
@@ -341,12 +341,12 @@ def _integration_checks(checks, metrics):
         left = (a.get("expires_at") or 0) - time.time()
         lvl = "warn" if 0 < left < float(cfg("token_warn_sec")) else "ok"
         checks.append(_chk("auth", "Twitch auth", lvl,
-                           "token expires soon — it will auto-refresh" if lvl == "warn" else "authorized"))
+                           "token expires soon; it will auto-refresh" if lvl == "warn" else "authorized"))
     else:
         starting = _starting_up()
         checks.append(_chk("auth", "Twitch auth",
                            "warn" if (starting or not interactive) else "bad",
-                           "authorizing — Stream Manager just started" if starting
+                           "authorizing (Stream Manager just started)" if starting
                            else (a.get("error") or f"not authorized ({a.get('status')})")))
 
     if interactive:
@@ -355,7 +355,7 @@ def _integration_checks(checks, metrics):
         checks.append(_chk("chat", "Twitch chat",
                            "ok" if connected else ("warn" if starting else "bad"),
                            "connected" if connected
-                           else ("connecting — Stream Manager just started" if starting
+                           else ("connecting (Stream Manager just started)" if starting
                                  else (chat.status.get("error") or "disconnected"))))
         r = redeems.public_status()
         checks.append(_chk("redeems", "Channel-point redeems", "ok" if r.get("ready") else "warn",
@@ -367,7 +367,7 @@ def _integration_checks(checks, metrics):
                                else (e.get("error") or "not connected")))
         else:
             checks.append(_chk("eventsub", "EventSub", "warn",
-                               "websocket-client not installed — using polling"))
+                               "websocket-client not installed, using polling"))
 
     if spotify.configured():
         s = spotify.public_status()
@@ -473,7 +473,7 @@ def preflight():
     if not m.get("obs_ws"):
         items.append({"label": "OBS WebSocket", "status": "warn",
                       "message": m.get("obs_ws_error")
-                                 or "not reachable — health metrics will be limited"})
+                                 or "not reachable, so health metrics will be limited"})
     else:
         items.append({"label": "OBS WebSocket", "status": "ok", "message": "connected"})
 
@@ -483,17 +483,17 @@ def preflight():
     for i in items:
         if i["label"] == "OBS" and i["status"] == "warn":
             i["status"] = "bad"
-            i["message"] = "not running — start OBS before going live"
+            i["message"] = "not running; start OBS before going live"
 
     bad = [i for i in items if i["status"] == "bad"]
     warn = [i for i in items if i["status"] == "warn"]
     ready = not bad
     if bad:
-        summary = f"Not ready — {len(bad)} blocker{'s' if len(bad) > 1 else ''} to fix"
+        summary = f"Not ready: {len(bad)} blocker{'s' if len(bad) > 1 else ''} to fix"
     elif warn:
-        summary = f"Ready to stream — {len(warn)} warning{'s' if len(warn) > 1 else ''} worth a look"
+        summary = f"Ready to stream ({len(warn)} warning{'s' if len(warn) > 1 else ''} worth a look)"
     else:
-        summary = "Ready to stream — everything checks out"
+        summary = "Ready to stream: everything checks out"
     return {"ready": ready, "warnings": len(warn), "items": items, "summary": summary}
 
 

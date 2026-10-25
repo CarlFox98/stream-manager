@@ -52,7 +52,7 @@ DEFAULT_REDEEMS = {
                  "prompt": "Spin the Risky Wheel… if you dare.",
                  "global_cooldown": 180, "max_per_user_per_stream": 2, "max_per_stream": 0},
     "coinflip": {"title": "Coin Flip", "cost": 100, "enabled": False,
-                 "prompt": "Flip a coin — heads or tails?",
+                 "prompt": "Flip a coin: heads or tails?",
                  "global_cooldown": 15, "max_per_user_per_stream": 0, "max_per_stream": 0},
     "5050":     {"title": "50/50", "cost": 100, "enabled": False,
                  "prompt": "Take a 50/50 gamble.",
@@ -298,7 +298,7 @@ def handle_redemption(reward_id, red, action=None):
 # ── pause rewards off-scene ────────────────────────────────────────────────
 # The wheels only show on the scenes that carry the interactive overlays (Game
 # and Desktop). On Starting Soon / BRB / Ending a spin would play to nobody, so
-# those rewards are paused on Twitch there — viewers can't spend points on it.
+# those rewards are paused on Twitch there, so viewers can't spend points on it.
 _paused = {}    # action -> bool as last set on Twitch (None = unknown)
 
 
@@ -342,7 +342,7 @@ def sync_pause(scene=None):
     want = want_paused(scene, cfg)
     if want is None:
         # OBS scene unknown (OBS closed, WebSocket off): don't leave the rewards
-        # stuck paused from the last shutdown — fall back to always-on.
+        # stuck paused from the last shutdown; fall back to always-on.
         want = False
     for action in cfg["rewards"]:
         set_paused(action, want)
@@ -357,7 +357,7 @@ def _poll_reward(action, reward_id):
     code, body = _request("GET", f"{_BASE}/redemptions?{q}")
     if code != 200:
         if code in (401, 403):
-            status["error"] = f"redemptions read denied ({code}) — check scopes/affiliate"
+            status["error"] = f"redemptions read denied ({code}); check scopes/affiliate"
         return
     for red in body.get("data", []):
         handle_redemption(reward_id, red, action)
@@ -390,7 +390,7 @@ def _loop():
                             status["error"] = str(e)
                 status["polls"] += 1
         else:
-            # auth may have completed after startup — try to set up rewards
+            # auth may have completed after startup, so try to set up rewards
             if twitch_auth.get_user_token() and _broadcaster_id():
                 ensure_rewards()
         # trim the seen-set so it can't grow without bound

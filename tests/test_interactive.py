@@ -105,7 +105,7 @@ def test_cooldown_persist():
 
 
 def test_cooldown_prunes_stale_entries():
-    """Entries older than _MAX_AGE must not be persisted or reloaded — otherwise
+    """Entries older than _MAX_AGE must not be persisted or reloaded; otherwise
     cooldowns.json gains a permanent row per (action, viewer), forever."""
     import time as _t
     cooldowns.reset()
@@ -475,7 +475,7 @@ def test_song_command_and_spotify(monkeypatch):
     from stream_manager import spotify, commands
     assert commands.canonical_for("np") == "song" and commands.canonical_for("song") == "song"
     assert spotify.configured() is False and spotify.public_status()["status"] == "unconfigured"
-    monkeypatch.setattr(spotify, "song_line", lambda: "🎵 Now playing: X — Y")
+    monkeypatch.setattr(spotify, "song_line", lambda: "🎵 Now playing: X by Y")
     sent = []
     games.handle_command("!song", "u", say=sent.append)
     assert sent and "Now playing" in sent[0]
@@ -650,7 +650,7 @@ def test_health_preflight_skips_live_only_checks(monkeypatch):
 
 def test_health_preflight_blocks_when_obs_is_closed(monkeypatch):
     """OBS being closed is only a warning while idling, but a hard blocker
-    for preflight — you cannot go live without it."""
+    for preflight: you cannot go live without it."""
     from stream_manager import health
     monkeypatch.setattr(health, "sample", lambda: {
         "checks": [{"id": "obs", "label": "OBS", "status": "warn",
@@ -751,7 +751,7 @@ def test_bitrate_collapse_is_caught_when_drops_are_zero(monkeypatch, tmp_path):
     assert snap["metrics"]["bitrate_kbps"] == 50
     bit = next(c for c in snap["checks"] if c["id"] == "bitrate")
     assert bit["status"] == "bad"
-    assert bit["message"] == ("only 50 kbps of 6000 — upload can't sustain your "
+    assert bit["message"] == ("only 50 kbps of 6000; upload can't sustain your "
                               "bitrate, so OBS is shipping a lower-quality picture")
     # ...and crucially, dropped frames never left 0%
     dropped = next(c for c in snap["checks"] if c["id"] == "dropped")
@@ -777,7 +777,7 @@ def test_muted_mic_is_bad_while_live(monkeypatch, tmp_path):
 
 def test_default_mic_device_is_flagged(monkeypatch, tmp_path):
     """Mic/Aux bound to the Windows default device switches mid-stream when a
-    headset connects — exactly what the 2026-09-02 OBS log recorded."""
+    headset connects, exactly what the 2026-09-02 OBS log recorded."""
     from stream_manager import health
     monkeypatch.setattr(health, "LOG_FILE", str(tmp_path / "h.jsonl"))
     monkeypatch.setitem(cfg.config, "health", {"chat_alert": False})

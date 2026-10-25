@@ -1,4 +1,4 @@
-"""Stream Manager MCP server — lets Claude (or any MCP client) check and drive the stream.
+"""Stream Manager MCP server: lets Claude (or any MCP client) check and drive the stream.
 
     python -m stream_manager.mcp_server        (or mcp-server.bat on Windows)
 
@@ -23,7 +23,7 @@ Two deliberate differences from prism-ctl:
 
   · It does NOT import stream_manager.config (and therefore not ctl or
     lifecycle). config.py prints warnings to stdout at import time, and stdout
-    is the MCP channel — one stray line corrupts the protocol. It also loads
+    is the MCP channel, and one stray line corrupts the protocol. It also loads
     .env secrets into the environment, which this process has no use for. The
     runtime file path is resolved here the same way config/lifecycle resolve it,
     and a test pins the two together.
@@ -270,7 +270,7 @@ def shape_effects(timed, owed):
 def shape_update(data):
     notes = data.get("notes") or ""
     if len(notes) > _NOTES_MAX:
-        notes = notes[:_NOTES_MAX].rstrip() + "\n…(truncated — full notes on the GitHub release)"
+        notes = notes[:_NOTES_MAX].rstrip() + "\n…(truncated; full notes on the GitHub release)"
     return {
         "current": data.get("current"),
         "latest": data.get("latest"),

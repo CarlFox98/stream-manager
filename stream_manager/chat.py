@@ -1,4 +1,4 @@
-"""Twitch chat over raw IRC (TLS) — no third-party websocket dependency.
+"""Twitch chat over raw IRC (TLS), no third-party websocket dependency.
 
 Twitch exposes plain IRC on irc.chat.twitch.tv:6697 (TLS), which the standard
 library's socket + ssl handle directly. We authenticate with the broadcaster's
@@ -96,7 +96,7 @@ def _handle_privmsg(tags, prefix, params, channel):
     # Broadcast every message to the PRISM chat overlay (channel "chat").
     # summary=None on purpose: a summary would push each line into the
     # dashboard's 25-entry activity feed and bury every shoutout and redeem.
-    # Wrapped because this thread also runs !commands — a malformed message
+    # Wrapped because this thread also runs !commands, and a malformed message
     # must never take the IRC client down with it.
     try:
         msg = chatfeed.message(tags, prefix, text)
@@ -140,7 +140,7 @@ def _emit_mod(build, *args):
     """Build and push a moderation event to the PRISM chat overlay.
 
     Never raises: a mod deleting a message is exactly the moment the IRC thread
-    must not die. The BUILD is inside the guard as well as the emit — wrapping
+    must not die. The BUILD is inside the guard as well as the emit; wrapping
     only the emit left a malformed payload free to take the connection down,
     which is the whole failure this exists to prevent.
     """
@@ -156,7 +156,7 @@ def dispatch(tags, prefix, command, params, channel):
     """Route one parsed IRC line. Returns False to close the connection.
 
     Split out of the read loop so the CLEARMSG/CLEARCHAT param shapes can be
-    tested directly — a test that re-implements this indexing instead of calling
+    tested directly. A test that re-implements this indexing instead of calling
     it would stay green through exactly the mistake that matters (reading a
     per-user timeout as a whole-room clear wipes the overlay).
     """
@@ -178,7 +178,7 @@ def dispatch(tags, prefix, command, params, channel):
     elif command in ("001", "GLOBALUSERSTATE", "JOIN"):
         status["connected"] = True
     elif command == "NOTICE" and params and "authentication failed" in params[-1].lower():
-        status["error"] = "authentication failed — re-authorize on the dashboard"
+        status["error"] = "authentication failed; re-authorize on the dashboard"
         _stop_flag_soft()
         return False
     return True
@@ -252,7 +252,7 @@ def _run_forever():
             status["error"] = str(e)
         finally:
             _close()
-        if status["error"] == "authentication failed — re-authorize on the dashboard":
+        if status["error"] == "authentication failed; re-authorize on the dashboard":
             return
         if _stop.is_set():
             return

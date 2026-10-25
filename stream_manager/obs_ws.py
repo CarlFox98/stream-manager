@@ -2,7 +2,7 @@
 Minimal synchronous OBS WebSocket v5 client, used for status polling only.
 
 Talks to OBS's built-in WebSocket server (OBS 28+, protocol v5) to report
-real streaming/recording state and the current scene name — replacing the
+real streaming/recording state and the current scene name, replacing the
 old tasklist/PowerShell process-sniffing where it's available. Read-only:
 never issues a request that changes OBS's state. Opens a short-lived
 connection per poll rather than holding one open, so it survives OBS
@@ -35,23 +35,23 @@ def _friendly(exc, host, port):
     name = type(exc).__name__
     text = str(exc) or name
     if isinstance(exc, socket.timeout) or "timed out" in text.lower():
-        return (f"no response from {host}:{port} — if OBS is on this PC set "
+        return (f"no response from {host}:{port}; if OBS is on this PC set "
                 f"OBS_WEBSOCKET_HOST=127.0.0.1 in .env (a stale LAN IP times out like this)")
     if isinstance(exc, ConnectionRefusedError) or getattr(exc, "errno", None) == errno.ECONNREFUSED:
-        return (f"connection refused at {host}:{port} — OBS is not running, or its WebSocket "
+        return (f"connection refused at {host}:{port}; OBS is not running, or its WebSocket "
                 f"server is off (OBS → Tools → WebSocket Server Settings → Enable)")
     if isinstance(exc, socket.gaierror):
-        return f"cannot resolve host '{host}' — check OBS_WEBSOCKET_HOST in .env"
+        return f"cannot resolve host '{host}'; check OBS_WEBSOCKET_HOST in .env"
     low = text.lower()
     if "authentication" in low or "auth" in low:
-        return "OBS rejected the password — copy it from OBS → Tools → WebSocket Server Settings → Show Connect Info"
+        return "OBS rejected the password; copy it from OBS → Tools → WebSocket Server Settings → Show Connect Info"
     if "unreachable" in low or "no route" in low:
-        return f"{host}:{port} is unreachable — check OBS_WEBSOCKET_HOST in .env"
+        return f"{host}:{port} is unreachable; check OBS_WEBSOCKET_HOST in .env"
     return f"{name}: {text}"
 
 if websocket is None and os.environ.get("OBS_WEBSOCKET_PASSWORD"):
     print("[obs] OBS_WEBSOCKET_PASSWORD is set but the 'websocket-client' package "
-          "isn't installed (pip install websocket-client) — falling back to process detection.")
+          "isn't installed (pip install websocket-client); falling back to process detection.")
 
 
 def _build_auth_response(password, challenge, salt):
@@ -103,7 +103,7 @@ def _request(ws, request_type, data=None):
 
 
 def fetch_stats(mic_input="Mic/Aux"):
-    """One connection, both stats calls — the numbers the health monitor needs.
+    """One connection, both stats calls: the numbers the health monitor needs.
 
     Returns {"ok": bool, "stats": {...}, "stream": {...}} where:
       stats  (GetStats)        cpuUsage, memoryUsage, availableDiskSpace, activeFps,
@@ -112,9 +112,9 @@ def fetch_stats(mic_input="Mic/Aux"):
                                (encoding lag)
       stream (GetStreamStatus) outputActive, outputReconnecting, outputCongestion,
                                outputBytes, outputDuration, and
-                               outputSkippedFrames/outputTotalFrames — the frames the
+                               outputSkippedFrames/outputTotalFrames (the frames the
                                stream output dropped, i.e. the network drops that show
-                               up in OBS as "dropped frames (network)".
+                               up in OBS as "dropped frames (network)").
     """
     if websocket is None:
         status.update(ok=False, error="the 'websocket-client' package isn't installed "

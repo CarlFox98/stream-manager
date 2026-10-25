@@ -20,16 +20,16 @@ CONFIG_DEFAULTS = {
     "assets_dir": r"%USERPROFILE%\Pictures\OBS Assets",
     "log_file": "server.log",
     "lan": False,
-    # Switchable overlay sets — folder names under <assets_dir>/overlays/.
+    # Switchable overlay sets: folder names under <assets_dir>/overlays/.
     # Add a set here to make it selectable from the dashboard.
     "scene_sets": ["modern", "retro"],
     # ── interactive layer (chat commands + channel-point redeems) ──
     "interactive_enabled": True,
     "command_prefix": "!",
     "redeem_poll_interval": 3,   # seconds between channel-point redemption polls
-    # Wheel content — leave {} to use the built-in defaults (see games.py).
+    # Wheel content: leave {} to use the built-in defaults (see games.py).
     "wheels": {},
-    # Channel-point redeem definitions — leave {} to use the built-in defaults
+    # Channel-point redeem definitions: leave {} to use the built-in defaults
     # (see redeems.py). Keys: lucky, risky, coinflip, 5050, plus auto_fulfill.
     "redeems": {},
     # Chat-command cooldowns (seconds). Leave {} for built-in defaults
@@ -50,14 +50,14 @@ CONFIG_DEFAULTS = {
     "spotify": {},
     # Viewer alerts: first-time chatters + new followers (see alerts.py).
     "alerts": {},
-    # Shoutouts (!so + auto raid shoutout, clip card overlay) — see shoutout.py.
+    # Shoutouts (!so + auto raid shoutout, clip card overlay); see shoutout.py.
     "shoutout": {},
-    # Stream Health Monitor thresholds + alerting — see health.py.
+    # Stream Health Monitor thresholds + alerting; see health.py.
     "health": {},
-    # Wheel outcome tuning (durations, poll/prediction titles, DJ rules) — see
+    # Wheel outcome tuning (durations, poll/prediction titles, DJ rules); see
     # outcomes.py. Leave {} for the built-in defaults.
     "outcomes": {},
-    # The ONE OBS source wheel effects may touch, and the scene it lives in —
+    # The ONE OBS source wheel effects may touch, and the scene it lives in;
     # see obs_control.py. {"enabled", "source", "scene"}.
     "obs_effects": {},
     # Steam library for "Chat picks the next game": optional "path", plus
@@ -66,7 +66,7 @@ CONFIG_DEFAULTS = {
     # Featured Viewers on Starting Soon: {"slots": 3}.
     "featured": {},
     # Chat overlay extras: third-party emotes (7TV/BTTV/FFZ) and inline
-    # sub/raid/cheer cards — see chatfeed.py.
+    # sub/raid/cheer cards; see chatfeed.py.
     "chat": {},
 }
 
@@ -112,7 +112,7 @@ def reload():
     """Re-read config.json in place so wheels/cooldowns/redeems/prefix can be
     changed without restarting. Mutates the shared `config` dict so every module
     that did `from .config import config` sees the update. Path-derived values
-    (assets_dir, ports) are intentionally NOT hot-reloaded — those need a restart.
+    (assets_dir, ports) are intentionally NOT hot-reloaded; those need a restart.
     """
     fresh = _load_config()
     hot_keys = ("interactive_enabled", "command_prefix", "redeem_poll_interval",
@@ -187,7 +187,7 @@ if not os.path.isfile(_env_path) and os.path.isfile(_env_example):
     try:
         import shutil
         shutil.copyfile(_env_example, _env_path)
-        print("[config] Created .env from .env.example — add your Twitch credentials, then restart.")
+        print("[config] Created .env from .env.example. Add your Twitch credentials, then restart.")
     except Exception as e:
         print(f"[config] Could not create .env automatically: {e}")
 if os.path.isfile(_env_path):
@@ -207,7 +207,7 @@ def spotify_client_id(env, cfg):
 
     A Spotify client id is public (it ships inside every PKCE page that uses
     it, including the PRISM now-playing widget), so it may live in config.json.
-    The client *secret* never does — that stays .env-only.
+    The client *secret* never does; that stays .env-only.
     """
     v = (env.get("SPOTIFY_CLIENT_ID") or "").strip()
     if v:

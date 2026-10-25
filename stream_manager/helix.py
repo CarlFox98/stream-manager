@@ -54,5 +54,5 @@ def error_text(code, body):
         return (body or {}).get("_error") or "not authorized"
     msg = (body or {}).get("message") or ""
     if code in (401, 403):
-        return f"Twitch refused ({code}) — re-authorize on the dashboard{': ' + msg if msg else ''}"
+        return f"Twitch refused ({code}); re-authorize on the dashboard{': ' + msg if msg else ''}"
     return f"Twitch error {code}{': ' + msg if msg else ''}"
