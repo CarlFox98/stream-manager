@@ -416,7 +416,8 @@ def _jackpot(ctx):
         done.append(f"VIP {int(opt('vip_days'))} days")
     if not done:
         return False, "jackpot could not grant anything"
-    announce(f"🎉 JACKPOT for {ctx['user']}: {' + '.join(done)}!", "orange")
+    if not ctx.get("quiet"):
+        announce(f"🎉 JACKPOT for {ctx['user']}: {' + '.join(done)}!", "orange")
     _say(ctx, f"🎉 JACKPOT! {ctx['user']} gets {' + '.join(done)}!")
     return True, "jackpot"
 

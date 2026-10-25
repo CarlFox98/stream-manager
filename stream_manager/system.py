@@ -41,22 +41,38 @@ def get_system_stats(state):
         except Exception: pass
 
 
+import json as _json, re as _re
+
+# Names that are integrated graphics. On a Ryzen 7000 desktop the iGPU is listed
+# first as plain "AMD Radeon(TM) Graphics", so "first controller" showed that
+# instead of the RX 7900 XTX actually doing the encoding.
+_IGPU = _re.compile(r"^(amd radeon\(tm\) graphics|amd radeon graphics|intel\(r\) (uhd|hd|iris)|"
+                    r"intel\(r\) graphics)", _re.I)
+_SKIP = ("virtual", "remote", "basic", "parsec", "meta", "mirror")
+
+
+def pick_gpu(adapters):
+    """Choose the GPU to show from [{"Name": str, "AdapterRAM": int}, ...].
+
+    Discrete beats integrated; then more reported VRAM wins. AdapterRAM is a
+    32-bit field Windows caps near 4 GB, so it only breaks ties.
+    """
+    cands = [a for a in adapters if a.get("Name")
+             and not any(w in a["Name"].lower() for w in _SKIP)] or [a for a in adapters if a.get("Name")]
+    if not cands:
+        return ""
+    cands.sort(key=lambda a: (bool(_IGPU.match(a["Name"].strip())), -(a.get("AdapterRAM") or 0)))
+    return cands[0]["Name"].strip()
+
+
 def get_gpu_stats(state):
     try:
         out = subprocess.run(
             ["powershell", "-noprofile", "-command",
-             "Get-CimInstance Win32_VideoController | "
-             "Where-Object { $_.Name -notlike '*Virtual*' -and $_.Name -notlike '*Remote*' -and $_.Name -notlike '*Basic*' } | "
-             "Select-Object -First 1 | Select-Object -ExpandProperty Name"],
+             "Get-CimInstance Win32_VideoController | Select-Object Name, AdapterRAM | ConvertTo-Json -Compress"],
             capture_output=True, text=True, timeout=5)
-        name = out.stdout.strip()
-        if not name:
-            # fallback: first controller
-            out = subprocess.run(
-                ["powershell", "-noprofile", "-command",
-                 "Get-CimInstance Win32_VideoController | Select-Object -First 1 | Select-Object -ExpandProperty Name"],
-                capture_output=True, text=True, timeout=5)
-            name = out.stdout.strip()
+        raw = _json.loads(out.stdout.strip() or "[]")
+        name = pick_gpu(raw if isinstance(raw, list) else [raw])
         if name:
             state["system"]["gpu"] = name
     except Exception: pass

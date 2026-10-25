@@ -436,6 +436,29 @@ def run_action(name, user="", say=None, user_id="", login="", on_fail=None, on_o
     return result
 
 
+def _run_custom(cmd, user, can_edit, args, say):
+    """Run a custom command if it exists and the caller may. Returns True if it
+    matched (even when blocked by its cooldown, so it isn't treated as unknown).
+
+    Cooldowns here are silent: an info command like !discord answering
+    "on cooldown" would be more spam than the repeat it blocks.
+    """
+    from . import commands
+    c = commands.get_custom(cmd)
+    if not (c and c.get("enabled", True) and commands.permission_ok(c, can_edit)):
+        return False
+    name = cmd.lower()
+    bypass = can_edit and (config.get("cooldowns") or {}).get("mods_bypass", _DEFAULT_COOLDOWNS["mods_bypass"])
+    if not bypass:
+        ok, _wait, _scope = cooldowns.check("custom:" + name, user,
+                                            int(c.get("user_cd", 0) or 0), int(c.get("global_cd", 0) or 0))
+        if not ok:
+            return True
+    say(commands.render(c["response"], user, args))
+    stats.bump_command(name)
+    return True
+
+
 def handle_command(message, user, is_mod=False, is_broadcaster=False, say=None,
                    prefix="!", user_id=""):
     """Parse one chat line. Returns True if it was a recognized command.
@@ -458,9 +481,7 @@ def handle_command(message, user, is_mod=False, is_broadcaster=False, say=None,
     from . import commands
     canon = commands.canonical_for(cmd)
     if canon and not commands.is_enabled(canon):
-        c = commands.get_custom(cmd)
-        if c and c.get("enabled", True) and commands.permission_ok(c, can_edit):
-            say(commands.render(c["response"], user, args))
+        _run_custom(cmd, user, can_edit, args, say)
         return True
 
     if cmd in ("coinflip", "flip", "coin"):
@@ -530,16 +551,11 @@ def handle_command(message, user, is_mod=False, is_broadcaster=False, say=None,
         say(line or "No song is playing right now.")
         return True
     if cmd in ("commands", "help"):
-        say(f"Games: {prefix}coinflip · {prefix}5050 · {prefix}slots · {prefix}dice · "
-            f"{prefix}8ball <q> · {prefix}duel @user · {prefix}quote [n] · {prefix}song · {prefix}addquote (mods)")
+        say(commands.help_line(prefix, can_edit))
         return True
 
     # Custom commands (user-defined !name -> response)
-    c = commands.get_custom(cmd)
-    if c and c.get("enabled", True) and commands.permission_ok(c, can_edit):
-        say(commands.render(c["response"], user, args))
-        return True
-    return False
+    return _run_custom(cmd, user, can_edit, args, say)
 
 
 # ── default wheel content (used until you customize config.json) ───────────

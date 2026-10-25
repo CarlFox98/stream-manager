@@ -217,6 +217,45 @@ def test_stats_and_leaderboard():
     assert any(p["user"] == "alice" for p in s["top_players"])
 
 
+def test_dashboard_test_plays_stay_off_the_leaderboard():
+    stats.record("slots", "slots", "alice", "JACKPOT")
+    stats.record("slots", "slots", "Dashboard", "JACKPOT")
+    stats.record("5050", "5050", "dashboard", "WIN")
+    s = stats.summary()
+    assert [p["user"] for p in s["top_players"]] == ["alice"]
+    assert s["total_plays"] == 1 and s["jackpots"] == 1
+    # still visible as a test in the raw recent list
+    assert s["recent"][0]["user"] == "dashboard" and s["recent"][0]["test"]
+
+
+def test_quote_edit_keeps_id_author_and_date():
+    q = quotes.add("7 maybe", added_by="galaxy")
+    e = quotes.edit(q["id"], "  maybe  ")
+    assert e["text"] == "maybe" and e["id"] == q["id"] and e["added_by"] == "galaxy" and e["date"] == q["date"]
+    assert quotes.get(q["id"])["text"] == "maybe"
+    assert quotes.edit(q["id"], "   ") is None          # empty text refused
+    assert quotes.edit(9999, "x") is None
+
+
+def test_wheel_spins_feed_outcomes_and_jackpots():
+    # games.spin_wheel records ("wheel", kind, ...), not ("lucky", ...)
+    stats.record("wheel", "lucky", "alice", "JACKPOT 🎉")
+    stats.record("wheel", "risky", "bob", "Timeout 60s")
+    s = stats.summary()
+    labels = {o["label"] for o in s["top_outcomes"]}
+    assert labels == {"JACKPOT 🎉", "Timeout 60s"}
+    assert s["jackpots"] == 1 and s["totals"]["wheel"] == 2
+
+
+def test_old_test_plays_already_in_the_file_are_filtered():
+    stats._store["users"]["Dashboard"] = {"plays": 29, "wins": 3}
+    stats._store["users"]["bob"] = {"plays": 2, "wins": 0}
+    stats._store["jackpots"] = 3
+    s = stats.summary()
+    assert [p["user"] for p in s["top_players"]] == ["bob"]
+    assert s["jackpots"] == 0
+
+
 # ── one-click OAuth (authorization-code flow) ────────────────────────────────
 def test_authorize_url_and_redirect_port():
     twitch_auth.set_server_port(5123)
@@ -951,3 +990,79 @@ def test_log_rotates_at_the_size_ceiling(tmp_path, monkeypatch):
     for i in range(60):
         logging_util.append_line(path, f"line {i:04d} " + "x" * 20)
     assert os.path.isfile(path + ".old")
+
+
+def test_served_files_stay_out_of_the_events_log(monkeypatch):
+    from stream_manager import server
+    from stream_manager.state import state
+    monkeypatch.setitem(state, "requests", [])
+    monkeypatch.setitem(state, "events", [])
+    monkeypatch.setattr(server, "write_file_log", lambda line: None)
+    h = server.Handler.__new__(server.Handler)
+    for i in range(150):
+        h.log(f"Served: fonts/f{i}.woff2", "→")
+    h.log("Wheel test featured → ok", "→")
+    h.log("Served dashboard", "→")
+    assert len(state["requests"]) == 100
+    assert [e.split("] ", 1)[1] for e in state["events"]] == ["Wheel test featured → ok"]
+
+
+def test_custom_command_cooldown_and_use_count(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, "CONFIG_FILE", str(tmp_path / "config.json"))
+    monkeypatch.setitem(cfg.config, "commands", {})
+    monkeypatch.setitem(cfg.config, "cooldowns", {"mods_bypass": True})
+    assert commands.upsert_custom("discord", "join {user}", user_cd=30, global_cd=0)[0]
+    sent = []
+    assert games.handle_command("!discord", "a", say=sent.append)
+    assert games.handle_command("!discord", "a", say=sent.append)   # matched, but silently blocked
+    assert games.handle_command("!discord", "b", say=sent.append)   # other viewer: own window
+    assert sent == ["join a", "join b"]
+    assert games.handle_command("!discord", "a", is_mod=True, say=sent.append)  # mods bypass
+    assert len(sent) == 3
+    c = next(x for x in commands.list_customs() if x["name"] == "discord")
+    assert c["uses"] == 3 and c["user_cd"] == 30 and c["global_cd"] == 0
+
+
+def test_toggling_a_custom_command_keeps_its_cooldowns(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, "CONFIG_FILE", str(tmp_path / "config.json"))
+    monkeypatch.setitem(cfg.config, "commands", {})
+    commands.upsert_custom("x", "y", user_cd=15, global_cd=5)
+    commands.upsert_custom("x", "y", enabled=False)              # what the on/off switch sends
+    c = commands.get_custom("x")
+    assert c["enabled"] is False and c["user_cd"] == 15 and c["global_cd"] == 5
+    commands.upsert_custom("x", "y", user_cd="9999", global_cd=-3)
+    c = commands.get_custom("x")
+    assert c["user_cd"] == 3600 and c["global_cd"] == 0           # clamped
+
+
+
+def test_commands_help_reflects_what_is_switched_on(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, "CONFIG_FILE", str(tmp_path / "config.json"))
+    monkeypatch.setitem(cfg.config, "commands", {
+        "slots": {"enabled": False},
+        "custom": {"discord": {"response": "x", "permission": "everyone", "enabled": True},
+                   "modsecret": {"response": "y", "permission": "mods", "enabled": True},
+                   "old": {"response": "z", "permission": "everyone", "enabled": False}}})
+    sent = []
+    games.handle_command("!commands", "viewer", say=sent.append)
+    import re
+    names = lambda text: set(re.findall(r"!(\w+)", text))
+    line = sent[-1]
+    assert {"discord", "coinflip", "song"} <= names(line)
+    assert "slots" not in names(line)            # switched off on the dashboard
+    assert not {"modsecret", "old", "so"} & names(line)
+    games.handle_command("!commands", "mod", is_mod=True, say=sent.append)
+    assert {"modsecret", "so"} <= names(sent[-1])
+    assert len(sent[-1]) <= 480
+
+
+
+def test_gpu_prefers_the_discrete_card():
+    from stream_manager import system
+    pc = [{"Name": "AMD Radeon(TM) Graphics", "AdapterRAM": 536870912},
+          {"Name": "AMD Radeon RX 7900 XTX", "AdapterRAM": 4293918720}]
+    assert system.pick_gpu(pc) == "AMD Radeon RX 7900 XTX"
+    assert system.pick_gpu(pc[::-1]) == "AMD Radeon RX 7900 XTX"
+    assert system.pick_gpu([{"Name": "Parsec Virtual Display Adapter"}, {"Name": "Intel(R) UHD Graphics 770"}]) \
+        == "Intel(R) UHD Graphics 770"                      # only an iGPU: still shown
+    assert system.pick_gpu([]) == ""

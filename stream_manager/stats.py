@@ -26,9 +26,19 @@ _store = {
     "wheel_outcomes": {},  # label -> count
     "jackpots": 0,       # slots/lucky jackpots
     "recent": [],        # last N outcomes
+    "commands": {},      # custom command name -> times used
 }
 _RECENT_MAX = 50
 _loaded = False
+
+# Dashboard test buttons play as this user. Their plays stay in "recent" (tagged
+# test) so you can see a test ran, but never count toward totals, jackpots or the
+# leaderboard. Older test plays already in stats.json are filtered at read time.
+TEST_USER = "Dashboard"
+
+
+def is_test_user(user):
+    return (user or "").strip().lower() == TEST_USER.lower()
 
 
 def _load():
@@ -77,14 +87,25 @@ def record(game, subtype, user, outcome):
     """Record one game result. Safe to call from any thread."""
     with _lock:
         _load()
+        if is_test_user(user):
+            _store["recent"].insert(0, {
+                "game": game, "user": user, "outcome": outcome, "test": True,
+                "ts": datetime.now(timezone.utc).timestamp(),
+            })
+            del _store["recent"][_RECENT_MAX:]
+            _save()
+            return
         _store["totals"][game] = _store["totals"].get(game, 0) + 1
         u = _store["users"].setdefault(user or "anon", {"plays": 0, "wins": 0})
         u["plays"] += 1
-        win = _is_win(game, outcome)
+        # Wheel spins are recorded as game "wheel" with the wheel ("lucky"/"risky")
+        # as the subtype; win/outcome tracking keys on the wheel, not "wheel".
+        kind = subtype if game == "wheel" else game
+        win = _is_win(kind, outcome)
         if win:
             u["wins"] += 1
             _store["jackpots"] += 1
-        if game in ("lucky", "risky"):
+        if kind in ("lucky", "risky"):
             _store["wheel_outcomes"][outcome] = _store["wheel_outcomes"].get(outcome, 0) + 1
         _store["recent"].insert(0, {
             "game": game, "user": user, "outcome": outcome,
@@ -97,16 +118,33 @@ def record(game, subtype, user, outcome):
 def summary():
     with _lock:
         _load()
-        top_players = sorted(_store["users"].items(), key=lambda kv: kv[1]["plays"], reverse=True)[:10]
+        real = {u: s for u, s in _store["users"].items() if not is_test_user(u)}
+        test_wins = sum(s.get("wins", 0) for u, s in _store["users"].items() if is_test_user(u))
+        top_players = sorted(real.items(), key=lambda kv: kv[1]["plays"], reverse=True)[:10]
         top_outcomes = Counter(_store["wheel_outcomes"]).most_common(8)
         return {
             "totals": dict(_store["totals"]),
             "total_plays": sum(_store["totals"].values()),
-            "jackpots": _store["jackpots"],
+            "jackpots": max(0, _store["jackpots"] - test_wins),
             "top_players": [{"user": u, "plays": s["plays"], "wins": s["wins"]} for u, s in top_players],
             "top_outcomes": [{"label": l, "count": c} for l, c in top_outcomes],
             "recent": list(_store["recent"])[:15],
         }
+
+
+def bump_command(name):
+    """Count one use of a custom command."""
+    with _lock:
+        _load()
+        c = _store.setdefault("commands", {})
+        c[name] = c.get(name, 0) + 1
+        _save()
+
+
+def command_uses():
+    with _lock:
+        _load()
+        return dict(_store.get("commands") or {})
 
 
 def flush():

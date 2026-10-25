@@ -30,7 +30,10 @@ state = {
                "version": __version__, "supervised": supervised(),
                "polled_at": 0.0},
     "scenes": {"active_set": None, "available": []},
-    "requests": []
+    "requests": [],
+    # Same log minus "Served: <file>" lines. Kept separately because static
+    # files arrive in bursts and push real events out of the 100-line buffer.
+    "events": []
 }
 
 

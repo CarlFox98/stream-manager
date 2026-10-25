@@ -514,3 +514,34 @@ def test_spotify_client_id_env_wins_then_config():
     assert spotify_client_id({}, {"spotify": {"client_id": " cfgid "}}) == "cfgid"
     assert spotify_client_id({}, {"spotify": "junk"}) == ""
     assert spotify_client_id({}, {}) == ""
+
+
+def test_quick_test_can_skip_chat(live_server, monkeypatch, tmp_path):
+    """Dashboard toggle off → test plays reach the overlays but not Twitch chat."""
+    port, tok = live_server
+    from stream_manager import server, stats
+    # a test coin flip is a real play: keep it off the real data/stats.json
+    monkeypatch.setattr(stats, "STATS_FILE", str(tmp_path / "stats.json"))
+    monkeypatch.setattr(stats, "_store", {"totals": {}, "users": {}, "wheel_outcomes": {}, "jackpots": 0, "recent": []})
+    monkeypatch.setattr(stats, "_loaded", True)
+    said = []
+    monkeypatch.setattr(server.chat, "say", lambda text: said.append(text))
+    monkeypatch.setitem(server.chat.status, "connected", True)
+    code, _ = _http(port, "/api/interactive/test", {"action": "coinflip", "user": "Dashboard", "chat": False}, tok)
+    assert code == 200 and said == []
+    code, _ = _http(port, "/api/interactive/test", {"action": "coinflip", "user": "Dashboard"}, tok)
+    assert code == 200 and len(said) == 1              # no flag = old behaviour, posts
+
+
+def test_quiet_jackpot_skips_the_announcement(monkeypatch):
+    sent = []
+    monkeypatch.setattr(outcomes, "announce", lambda *a, **k: sent.append(a))
+    monkeypatch.setattr(outcomes, "_featured", lambda ctx: (True, "featured"))
+    ok, _ = outcomes.run("jackpot", {"user": "Dashboard", "user_id": "", "login": "", "test": True, "quiet": True})
+    assert ok and sent == []
+
+
+def test_quote_edit_endpoint_needs_the_token(live_server):
+    port, tok = live_server
+    assert _http(port, "/api/quotes/edit", {"id": 1, "text": "x"})[0] == 403
+    assert _http(port, "/api/quotes/edit", {"id": "nope", "text": "x"}, tok)[0] == 400

@@ -29,7 +29,7 @@ SESSION_TOKEN = secrets.token_urlsafe(32)
 # Endpoints that change state and therefore require the session token.
 _PROTECTED_POSTS = {
     "/api/interactive/test", "/api/interactive/authorize", "/api/interactive/reload",
-    "/api/quotes/add", "/api/quotes/delete", "/api/scenes/switch",
+    "/api/quotes/add", "/api/quotes/delete", "/api/quotes/edit", "/api/scenes/switch",
     "/api/update/install", "/auth/logout",
     "/api/commands/toggle", "/api/commands/custom", "/api/config/save",
     "/api/timers/save", "/auth/spotify", "/auth/spotify/logout",
@@ -502,7 +502,9 @@ class Handler(BaseHTTPRequestHandler):
             if body is None:
                 self.serve_json({"ok": False, "error": "Invalid request body"}, status=400); return
             action = body.get("action", "")
-            say = chat.say if chat.status.get("connected") else None
+            # "chat": false = test quietly (overlays only). Absent means post, so
+            # older callers (Stream Deck, MCP) keep their behaviour.
+            say = chat.say if chat.status.get("connected") and body.get("chat", True) else None
             if action == "shoutout":
                 effects.emit("shoutout", shoutout.demo_card(), summary="◇ Shoutout: PixelWitch (test)")
                 result = "shoutout"
@@ -552,7 +554,8 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 ok, msg = commands.upsert_custom(
                     body.get("name", ""), body.get("response", ""),
-                    body.get("permission", "everyone"), bool(body.get("enabled", True)))
+                    body.get("permission", "everyone"), bool(body.get("enabled", True)),
+                    user_cd=body.get("user_cd"), global_cd=body.get("global_cd"))
             self.log(f"Custom command {body.get('name','')}: {msg}", "✓" if ok else "✗")
             self.serve_json({"ok": ok, "message": msg, "commands": commands.public_list()},
                             status=200 if ok else 400)
@@ -645,8 +648,10 @@ class Handler(BaseHTTPRequestHandler):
             name = str(body.get("outcome", ""))
             if name not in outcomes.OUTCOMES:
                 self.serve_json({"ok": False, "error": "unknown outcome"}, status=400); return
+            quiet = not body.get("chat", True)
             ctx = {"user": body.get("user") or "Dashboard", "user_id": "", "login": "", "test": True,
-                   "say": chat.say if chat.status.get("connected") else None}
+                   "quiet": quiet,
+                   "say": chat.say if chat.status.get("connected") and not quiet else None}
             missing = outcomes.why_not(name, ctx)
             if missing:
                 self.serve_json({"ok": False, "error": "not possible right now: " + ", ".join(missing)},
@@ -658,6 +663,14 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/api/quotes/add":
             body = self._read_json() or {}
             q = quotes.add(body.get("text", ""), added_by=body.get("added_by", "dashboard"))
+            self.serve_json({"ok": bool(q), "quote": q}, status=200 if q else 400); return
+
+        if self.path == "/api/quotes/edit":
+            body = self._read_json() or {}
+            try:
+                q = quotes.edit(int(body.get("id", 0)), body.get("text", ""))
+            except (ValueError, TypeError):
+                q = None
             self.serve_json({"ok": bool(q), "quote": q}, status=200 if q else 400); return
 
         if self.path == "/api/quotes/delete":
@@ -916,6 +929,10 @@ h1{{color:{accent};margin:0 0 10px;font-size:22px}}p{{color:#b7a8d6;margin:0}}</
         state["requests"].insert(0, plain)
         if len(state["requests"]) > 100:
             state["requests"] = state["requests"][:100]
+        if not msg.startswith("Served"):
+            ev = state.setdefault("events", [])
+            ev.insert(0, plain)
+            del ev[100:]
         print(colored)
         write_file_log(plain)
 

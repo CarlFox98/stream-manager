@@ -5,9 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="sm-token" content="__SM_TOKEN__">
 <title>Stream Manager</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<!-- PRISM's own fonts (Space Grotesk + JetBrains Mono), vendored with the overlays — no network needed. -->
+<link rel="stylesheet" href="/overlays/PRISM/fonts/prism-fonts.css">
 <link rel="stylesheet" href="/static/dashboard.css">
 </head>
 <body>
@@ -21,6 +20,12 @@
   <img class="avatar" id="avatar" src="" alt="Channel avatar" style="display:none">
   <h1>Stream Manager</h1>
   <div class="sub"><span id="display-name">NeoTheFox98</span> · <span id="view-count">0</span> views</div>
+  <!-- Narrow windows only: the top bar is hidden there and these stand in for it,
+       so the page doesn't open with two "Stream Manager" cards. -->
+  <div class="side-compact">
+    <span class="ver-chip js-ver"></span>
+    <div class="conn-pill js-conn" title="This page's connection to Stream Manager — not your Twitch stream status"><span class="status-dot on"></span><span class="js-conn-text">Connected</span></div>
+  </div>
   <div class="side-block">
     <div class="side-label">Server</div>
     <div class="side-val">● <span id="server-status">Running</span> <span class="mono" id="server-port">:5000</span></div>
@@ -37,7 +42,7 @@
       <span class="tag">Control Center</span>
       <span class="ver-chip" id="ver-chip"></span>
     </div>
-    <div class="conn-pill" id="conn-pill"><span class="status-dot on"></span><span id="conn-text">Live</span></div>
+    <div class="conn-pill" id="conn-pill" title="This page's connection to Stream Manager — not your Twitch stream status"><span class="status-dot on"></span><span id="conn-text">Connected</span></div>
   </header>
 
   <nav class="tabs" id="tabs" role="tablist">
@@ -60,12 +65,12 @@
         <h3>OBS Studio</h3>
         <div class="status-line"><span class="status-dot" id="obs-dot"></span><span id="obs-label">Checking…</span></div>
         <div class="stat-label" id="obs-pid"></div>
-        <div class="stat-label" id="obs-uptime">Waiting…</div>
+        <div class="stat-label" id="obs-uptime">Checking…</div>
         <div class="stat-label" id="obs-scene"></div>
         <div class="stat-label" id="obs-outputs"></div>
       </div>
       <div class="card" id="twitch-card">
-        <h3>Twitch Stream</h3>
+        <h3>Twitch stream</h3>
         <div class="status-line"><span class="status-dot" id="twitch-dot"></span><span id="twitch-label">Checking…</span></div>
         <div class="twitch-title" id="twitch-title">—</div>
         <div class="twitch-game" id="twitch-game">—</div>
@@ -86,7 +91,7 @@
     </div>
 
     <div class="card update-card" id="update-card" style="flex:none">
-      <h3>Update Available</h3>
+      <h3>Update available</h3>
       <div class="update-ver" id="update-ver">—</div>
       <div class="update-sub">A newer version is on GitHub. Your current files are backed up before installing.</div>
       <button class="btn-primary" id="update-btn" data-act="update-install">Download &amp; Install</button>
@@ -94,7 +99,7 @@
     </div>
 
     <div class="card" style="flex:none">
-      <h3>Overlay Scene Set</h3>
+      <h3>Overlay set</h3>
       <div class="scene-active unknown" id="scene-active">Detecting…</div>
       <div class="scene-sub">Active theme served at <code>/overlays/active/</code></div>
       <div class="scene-btns" id="scene-btns"></div>
@@ -136,8 +141,8 @@
     </div>
 
     <div class="card" style="flex:none">
-      <h3>Live Metrics</h3>
-      <div class="scene-sub" id="hm-sub">Waiting for OBS…</div>
+      <h3>Live metrics</h3>
+      <div class="scene-sub" id="hm-sub">Checking OBS…</div>
       <div class="metric-grid" id="hm-metrics"></div>
       <div class="save-row">
         <button class="scene-btn" style="flex:0 0 auto" id="hm-mute" data-act="hm-mute">Mute alerts</button>
@@ -154,7 +159,7 @@
   <!-- ── Interactive ──────────────────────────────────────────── -->
   <section class="tab-panel" id="tab-interactive">
     <div class="card" style="flex:none">
-      <h3>Twitch Connection</h3>
+      <h3>Twitch connection</h3>
       <div class="auth-row"><span class="status-dot" id="ix-auth-dot"></span><span id="ix-auth-label">Checking…</span></div>
       <div class="scene-sub" id="ix-auth-hint" style="margin:8px 0 0"></div>
       <div class="auth-actions">
@@ -165,8 +170,9 @@
     </div>
 
     <div class="card" style="flex:none">
-      <h3>Quick Test</h3>
-      <div class="scene-sub">Fire an effect straight to your overlays (and chat if connected).</div>
+      <h3>Quick test</h3>
+      <div class="scene-sub">Fire an effect straight to your overlays.</div>
+      <label class="chat-toggle"><span class="lbl">Post test results in chat</span><span class="switch"><input type="checkbox" class="test-chat"><span class="track"></span><span class="knob"></span></span></label>
       <div class="ix-grid">
         <button class="scene-btn" data-test="coinflip">🪙 Coin Flip</button>
         <button class="scene-btn" data-test="5050">🎲 50 / 50</button>
@@ -182,12 +188,12 @@
     </div>
 
     <div class="card" style="flex:none" id="spotify-card">
-      <h3>Spotify · Now Playing</h3>
+      <h3>Spotify now playing</h3>
       <div id="spotify-body"><div class="stat-label">Loading…</div></div>
     </div>
 
     <div class="card" style="flex:none">
-      <h3>Live Overlay Preview</h3>
+      <h3>Live overlay preview</h3>
       <div class="scene-sub">Watch your overlays react — the Quick Test buttons above show here too. (This is a live view of the real overlay.)</div>
       <div class="preview-tabs" id="preview-tabs">
         <button class="scene-btn preview-btn active" data-preview="wheel">Wheel</button>
@@ -207,13 +213,13 @@
         <div class="ix-board" id="ix-board"><div class="stat-label">No plays yet.</div></div>
       </div>
       <div class="card">
-        <h3>Recent Results</h3>
+        <h3>Recent results <span class="mini">this session</span></h3>
         <div class="ix-feed" id="ix-feed"><div class="stat-label">No spins yet.</div></div>
       </div>
     </div>
 
     <div class="card" style="flex:none">
-      <h3>Overlay Browser Sources</h3>
+      <h3>Overlay browser sources</h3>
       <div class="scene-sub">Transparent, 1920×1080, placed above your scene.</div>
       <div class="url-list">
         <div class="url-item" data-copy tabindex="0" role="button" title="Copy full URL"><code>/static/interactive/wheel.html</code><span class="hint">Copy</span></div>
@@ -231,37 +237,39 @@
   <section class="tab-panel" id="tab-wheel">
     <div class="row">
       <div class="card">
-        <h3>Active Effects</h3>
+        <h3>Active effects</h3>
         <div class="scene-sub">Everything a spin turned on. Each one undoes itself on its timer — or now.</div>
         <div class="ix-feed" id="wh-fx"><div class="stat-label">Nothing active.</div></div>
         <div class="auth-actions"><button class="btn-primary" data-act="fx-undo-all">⟲ Undo all effects</button></div>
       </div>
       <div class="card">
-        <h3>Owed Rewards</h3>
+        <h3>Owed rewards</h3>
         <div class="scene-sub">Outcomes you deliver by hand. They stay here until ticked off.</div>
         <div class="ix-feed" id="wh-owed"><div class="stat-label">You're all caught up.</div></div>
       </div>
     </div>
     <div class="row">
       <div class="card">
-        <h3>VIPs from the Wheel</h3>
+        <h3>VIPs from the wheel</h3>
         <div class="scene-sub">Removed automatically when they expire. Existing VIPs and mods are never touched.</div>
         <div class="ix-feed" id="wh-vip"><div class="stat-label">None right now.</div></div>
       </div>
       <div class="card">
-        <h3>Featured Viewers</h3>
+        <h3>Featured viewers</h3>
         <div class="scene-sub">Shown on Starting Soon (<code>/static/interactive/featured.html</code>).</div>
         <div class="ix-feed" id="wh-feat"><div class="stat-label">Nobody featured yet.</div></div>
       </div>
     </div>
     <div class="card" style="flex:none">
-      <h3>Test an Outcome</h3>
+      <h3>Test an outcome</h3>
       <div class="scene-sub">Runs it for real as "Dashboard". Greyed out = can't happen right now (hover for why). Outcomes that need a real viewer (VIP, timeout, shoutout) only run from a real spin.</div>
+      <label class="chat-toggle"><span class="lbl">Post test results in chat</span><span class="switch"><input type="checkbox" class="test-chat"><span class="track"></span><span class="knob"></span></span></label>
+      <div class="mini chat-toggle-note">Off = no bot messages or announcements. Outcomes that <em>are</em> chat features (polls, predictions, emote-only, slow mode) still happen for real.</div>
       <div class="ix-grid" id="wh-outcomes"></div>
       <div class="scene-msg" id="wh-msg" aria-live="polite"></div>
     </div>
     <div class="card" style="flex:none">
-      <h3>Steam Games for "Chat picks the next game"</h3>
+      <h3>Steam games for “Chat picks the next game”</h3>
       <div class="scene-sub" id="wh-steam-sub">Read from your local Steam library — installed games only.</div>
       <div class="wh-steam" id="wh-steam"><div class="stat-label">Loading…</div></div>
     </div>
@@ -270,12 +278,12 @@
   <!-- ── Commands ─────────────────────────────────────────────── -->
   <section class="tab-panel" id="tab-commands">
     <div class="card" style="flex:none">
-      <h3>Built-in Commands</h3>
+      <h3>Built-in commands</h3>
       <div class="scene-sub">Toggle any command off to let another bot own it (e.g. SoundAlerts).</div>
       <div id="cmd-builtins" class="cmd-list"><div class="stat-label">Loading…</div></div>
     </div>
     <div class="card" style="flex:none">
-      <h3>Custom Commands</h3>
+      <h3>Custom commands</h3>
       <div class="scene-sub">Simple <code>!name → response</code> replies. Variables: <code>{user}</code>, <code>{args}</code>, <code>{1}</code>…</div>
       <div id="cmd-custom" class="cmd-list"><div class="stat-label">Loading…</div></div>
       <div class="form-grid" style="margin-top:14px">
@@ -285,7 +293,10 @@
           <option value="mods">Mods only</option>
         </select>
         <input class="field field-wide" id="cc-response" placeholder="Response text, e.g. Follow me at twitch.tv/{user}" maxlength="400" aria-label="Response">
-        <button class="btn-primary" data-act="cc-add">Add command</button>
+        <label class="cc-cd"><span class="mini">Per-viewer cooldown (s)</span><input class="field num" type="number" min="0" max="3600" id="cc-ucd" value="0"></label>
+        <label class="cc-cd"><span class="mini">Global cooldown (s)</span><input class="field num" type="number" min="0" max="3600" id="cc-gcd" value="0"></label>
+        <span class="cc-btns"><button class="btn-primary" id="cc-save" data-act="cc-add">Add command</button>
+        <button class="scene-btn" id="cc-cancel" data-act="cc-cancel" hidden>Cancel</button></span>
       </div>
       <div class="scene-msg" id="cmd-msg" aria-live="polite"></div>
     </div>
@@ -294,7 +305,7 @@
   <!-- ── Timers ───────────────────────────────────────────────── -->
   <section class="tab-panel" id="tab-timers">
     <div class="card" style="flex:none">
-      <h3>Timed Messages</h3>
+      <h3>Timed messages</h3>
       <div class="scene-sub">Auto-post to chat on an interval. A timer only fires once at least its “min lines” of chat have passed, so it won’t spam a quiet chat.</div>
       <div class="cfg-row2"><span class="lbl">Timed messages enabled</span><label class="switch"><input type="checkbox" id="tm-enabled"><span class="track"></span><span class="knob"></span></label></div>
       <div id="timer-list" style="margin-top:12px"></div>
@@ -315,7 +326,8 @@
         <input class="field field-wide" id="q-text" placeholder="New quote text…" maxlength="400" aria-label="Quote text">
         <button class="btn-primary" data-act="q-add" style="grid-column:1/-1;justify-self:start">Add quote</button>
       </div>
-      <div id="quote-list" class="cmd-list" style="margin-top:14px"><div class="stat-label">Loading…</div></div>
+      <input class="field" id="q-search" type="search" placeholder="Search quotes or #number…" aria-label="Search quotes" style="margin-top:14px;width:100%">
+      <div id="quote-list" class="cmd-list" style="margin-top:10px"><div class="stat-label">Loading…</div></div>
       <div class="scene-msg" id="q-msg" aria-live="polite"></div>
     </div>
   </section>
@@ -326,6 +338,13 @@
       <h3>Settings</h3>
       <div class="scene-sub">Edits save to <code>config.json</code> and apply live — no restart needed.</div>
       <div id="cfg-root"><div class="stat-label">Loading…</div></div>
+      <div class="cfg-savebar" id="cfg-savebar" role="status">
+        <span id="cfg-savebar-text">Unsaved changes</span>
+        <span class="cfg-savebar-btns">
+          <button class="scene-btn" data-act="cfg-discard">Discard</button>
+          <button class="btn-primary" id="cfg-saveall" data-act="cfg-saveall">Save all</button>
+        </span>
+      </div>
       <div class="scene-msg" id="cfg-msg" aria-live="polite"></div>
     </div>
   </section>
@@ -333,7 +352,10 @@
   <!-- ── Log ──────────────────────────────────────────────────── -->
   <section class="tab-panel" id="tab-log">
     <div class="card log-card">
-      <h3>Request Log</h3>
+      <div class="log-head">
+        <h3>Log</h3>
+        <label class="chat-toggle log-toggle"><span class="lbl">Hide served files</span><span class="switch"><input type="checkbox" id="log-events-only" checked><span class="track"></span><span class="knob"></span></span></label>
+      </div>
       <div class="log-box" id="log-box"><div class="log-entry">Waiting for data…</div></div>
     </div>
   </section>
