@@ -22,7 +22,7 @@ PING_APP = "stream-manager"
 # Per-run secret. The dashboard is served with this token baked into a <meta>
 # tag; its JavaScript echoes it back in an X-SM-Token header on every state-
 # changing request. A cross-site page (CSRF) or another device on the LAN can't
-# read the token, so it can't drive these endpoints — only the real dashboard,
+# read the token, so it can't drive these endpoints. Only the real dashboard,
 # loaded same-origin, can. Regenerated every start.
 SESSION_TOKEN = secrets.token_urlsafe(32)
 
@@ -210,7 +210,7 @@ MIME_MAP = {
     ".svg": "image/svg+xml", ".json": "application/json",
     # The overlays' vendored webfonts. Fonts happen to load as
     # application/octet-stream in CEF today, but that is the browser being
-    # lenient, not a contract — and one nosniff header away from breaking.
+    # lenient, not a contract, and one nosniff header away from breaking.
     ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf",
     ".otf": "font/otf", ".gif": "image/gif", ".webp": "image/webp",
     ".ico": "image/x-icon", ".mp3": "audio/mpeg", ".ogg": "audio/ogg",
@@ -312,7 +312,7 @@ class Handler(BaseHTTPRequestHandler):
             # n counts MESSAGES, not events: moderation events share this ring
             # buffer, so slicing the last n events would quietly restore fewer
             # messages the busier the mods were. Walk back until n messages are
-            # in view, then keep everything from there on — the moderation
+            # in view, then keep everything from there on. The moderation
             # events after them have to replay in order or a deleted message
             # comes back on an OBS source refresh.
             evs, seen = [], 0
@@ -641,8 +641,8 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_json({"ok": True, **steam_library.status()}); return
 
         if self.path == "/api/wheel/test":
-            # Force one outcome (dashboard "Test" button). Runs for real —
-            # emote-only really turns on — but as "Dashboard", so outcomes that
+            # Force one outcome (dashboard "Test" button). Runs for real
+            # (emote-only really turns on), but as "Dashboard", so outcomes that
             # need a real viewer (VIP, timeout, shoutout) report why instead.
             body = self._read_json() or {}
             name = str(body.get("outcome", ""))
@@ -709,7 +709,7 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, json.JSONDecodeError):
                 self.serve_json({"ok": False, "error": "Invalid request body"}, status=400); return
 
-            # Require explicit confirmation — never install on a bare request
+            # Require explicit confirmation; never install on a bare request
             if body.get("confirm") is not True:
                 self.serve_json({"ok": False, "error": "Confirmation required (confirm: true)"}, status=400); return
 
@@ -739,16 +739,16 @@ class Handler(BaseHTTPRequestHandler):
         """Restart or shut the app down, from the dashboard or prism-ctl.
 
         Three gates, and each one is load-bearing:
-          · the session token (via _PROTECTED_POSTS) — blocks CSRF
-          · loopback only — blocks every other device, password or not
-          · confirm: true — blocks a stray fetch with an empty body
+          · the session token (via _PROTECTED_POSTS): blocks CSRF
+          · loopback only: blocks every other device, password or not
+          · confirm: true, which blocks a stray fetch with an empty body
         """
         # Stopping the stream's brain is not something a phone on the LAN gets
         # to do, even holding the dashboard password. --lan exists so you can
         # *watch* the dashboard from the couch, not drive it.
         if not self._is_loopback():
             self.serve_json({"ok": False, "error":
-                             "Restart and shutdown are local-only — use the machine running Stream Manager."},
+                             "Restart and shutdown are local-only. Use the machine running Stream Manager."},
                             status=403); return
 
         body = self._read_json()
@@ -758,7 +758,7 @@ class Handler(BaseHTTPRequestHandler):
             self.serve_json({"ok": False, "error": "Confirmation required (confirm: true)"}, status=400); return
 
         # Restarting means exiting with code 42 and trusting someone to bring us
-        # back. Launched from a bare `python stream-manager.py`, nobody will —
+        # back. Launched from a bare `python stream-manager.py`, nobody will,
         # so say that instead of quietly turning Restart into Shutdown.
         if action == "restart" and not lifecycle.supervised():
             self.serve_json({"ok": False, "error":
@@ -776,7 +776,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.serve_json({"ok": False, "error": f"Not while live: {why}."}, status=409); return
 
         if lifecycle.requested():
-            # Already stopping — a double-click must not become restart-then-quit.
+            # Already stopping: a double-click must not become restart-then-quit.
             self.serve_json({"ok": True, "action": lifecycle.requested(), "already": True}); return
 
         # Log BEFORE starting the clock. self.log takes a process-global file
@@ -945,7 +945,7 @@ class _Server(ThreadingHTTPServer):
 
     def handle_error(self, request, client_address):
         """A browser source refreshing or a long-poll/SSE being torn down aborts
-        the socket mid-response — that's normal, not an error. Swallow the
+        the socket mid-response. That's normal, not an error. Swallow the
         connection-reset family instead of dumping a traceback."""
         import sys
         e = sys.exc_info()[1]
@@ -958,7 +958,7 @@ def detect_running_instance(start, span=20, host="127.0.0.1", timeout=0.4):
     """Return (port, info) of a Stream Manager already running, or (None, None).
 
     try_bind_port walks start..start+19 looking for a free port, which is right
-    when something unrelated holds the default — but it also meant launching the
+    when something unrelated holds the default, but it also meant launching the
     app twice quietly started a *second* copy one port up. The 2026-09-14 health
     log shows three instances running at once, each polling OBS and each writing
     the same log files, so every event was recorded three times.
@@ -974,7 +974,7 @@ def detect_running_instance(start, span=20, host="127.0.0.1", timeout=0.4):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             probe.settimeout(timeout)
             if probe.connect_ex((host, port)) != 0:
-                continue                      # nothing listening — keep looking
+                continue                      # nothing listening, keep looking
         try:
             req = urllib.request.Request(f"http://{host}:{port}/api/ping")
             with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -998,7 +998,7 @@ def _try_one(port, host):
     And there is always a TIME_WAIT entry after a restart. The dashboard's SSE
     stream and every OBS browser source's long poll are open connections that
     the server closes first, so the port sits in TIME_WAIT for a minute on
-    Linux and up to four on Windows — far past any settle window. The probe
+    Linux and up to four on Windows, far past any settle window. The probe
     turned "restart" into "come back on port 5001 and let every overlay go
     blank", which is exactly the failure try_bind_port is meant to prevent.
     """
@@ -1017,13 +1017,13 @@ def try_bind_port(start, host="127.0.0.1", settle=None):
 
     The configured port gets a grace period of its own before we give up on it.
     On a restart the previous instance let go of it a fraction of a second ago
-    and the OS may not have released it yet — and walking to the next port is
+    and the OS may not have released it yet, and walking to the next port is
     the worst available answer, because every OBS browser source and every
     bookmark points at the old one. The overlays would go blank mid-stream and
     nothing would say why. Waiting two seconds for the right port beats coming
     back instantly on the wrong one.
     """
-    # Read at call time, not baked into the signature — a default argument
+    # Read at call time, not baked into the signature: a default argument
     # can't be overridden by a test, which is how a test ends up asserting on
     # the number it passed in rather than the one that ships.
     if settle is None:

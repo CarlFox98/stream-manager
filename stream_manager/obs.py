@@ -29,7 +29,7 @@ def get_obs_status(state):
 
 def _fill_obs_process_info(state):
     """PID + process uptime only, leaving the WebSocket's scene/stream fields
-    alone. psutil only — the tasklist/PowerShell path is too slow to run every
+    alone. psutil only; the tasklist/PowerShell path is too slow to run every
     poll, so without psutil the values are simply left as they were."""
     try:
         import time
@@ -55,7 +55,7 @@ def _get_obs_status_psutil(state):
         import psutil
     except ImportError:
         return False
-    # No process-level view of streaming/recording/scene — clear stale WS values.
+    # No process-level view of streaming/recording/scene, so clear stale WS values.
     state["obs"]["streaming"] = False
     state["obs"]["recording"] = False
     state["obs"]["scene"] = ""
@@ -78,7 +78,7 @@ def _get_obs_status_psutil(state):
 
 
 def _get_obs_status_tasklist(state):
-    # tasklist can't see streaming/recording/scene state — don't leave stale
+    # tasklist can't see streaming/recording/scene state, so don't leave stale
     # values around from a WebSocket connection that has since dropped.
     state["obs"]["streaming"] = False
     state["obs"]["recording"] = False

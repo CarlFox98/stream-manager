@@ -1,4 +1,4 @@
-"""Wheel outcomes that actually do something — and only when they can.
+"""Wheel outcomes that actually do something, and only when they can.
 
 Each wheel segment names an `outcome` from OUTCOMES below. An outcome has:
 
@@ -11,7 +11,7 @@ Each wheel segment names an `outcome` from OUTCOMES below. An outcome has:
 
 Anything the streamer has to do by hand is put on the owed list (owed.py) so it
 can't be forgotten. Anything that turns something ON goes through timed.py so
-it turns itself OFF again — on its timer, at shutdown, or after a crash.
+it turns itself OFF again: on its timer, at shutdown, or after a crash.
 
 Old configs that use a bare "action" (vip / timeout:60 / shoutout / scene:x)
 still work through actions.py; see games.spin_wheel.
@@ -226,7 +226,7 @@ def _vip_revert(target, params, snap):
     code, body = helix.request("DELETE", "channels/vips",
                                {"broadcaster_id": helix.broadcaster_id(), "user_id": target})
     _cache.pop(("vip", target), None)
-    # 422/404 = no longer a VIP (removed by hand) — nothing left to undo
+    # 422/404 = no longer a VIP (removed by hand), nothing left to undo
     return helix.ok(code) or code in (404, 422)
 
 
@@ -247,7 +247,7 @@ def _swap_revert(target, params, snap):
     if not original:
         return True
     if scenes.detect_active_set() != params.get("to"):
-        return True                     # streamer switched by hand meanwhile — leave it
+        return True                     # streamer switched by hand meanwhile; leave it
     return scenes.apply_scene_set(original)[0]
 
 
@@ -287,7 +287,7 @@ def _dj_expire(login):
              source="lucky:dj")
     if w.get("say"):
         try:
-            w["say"](f"🎧 @{w['user']} your DJ window closed — Neo will sort your song pick by hand.")
+            w["say"](f"🎧 @{w['user']} your DJ window closed. Neo will sort your song pick by hand.")
         except Exception:
             pass
 
@@ -305,13 +305,13 @@ def on_chat(login, user, text, say=None):
         return False
     t = spotify.track(tid)
     if not t:
-        say and say(f"🎧 @{user} that link didn't resolve to a Spotify track — try another (track links only).")
+        say and say(f"🎧 @{user} that link didn't resolve to a Spotify track. Try another (track links only).")
         return True
     if t["duration_ms"] > int(opt("dj_max_minutes")) * 60000:
-        say and say(f"🎧 @{user} that one's over {opt('dj_max_minutes')} minutes — pick something shorter.")
+        say and say(f"🎧 @{user} that one's over {opt('dj_max_minutes')} minutes, pick something shorter.")
         return True
     if t["explicit"] and not opt("dj_allow_explicit"):
-        say and say(f"🎧 @{user} explicit tracks are off for this stream — pick another.")
+        say and say(f"🎧 @{user} explicit tracks are off for this stream, pick another.")
         return True
     ok, why = spotify.queue_track(t["uri"])
     if not ok:
@@ -319,7 +319,7 @@ def on_chat(login, user, text, say=None):
         return True
     with _dj_lock:
         _dj.pop(login, None)
-    say and say(f"🎧 Queued for @{user}: {t['title']} — {t['artist']}")
+    say and say(f"🎧 Queued for @{user}: {t['title']} by {t['artist']}")
     return True
 
 
@@ -346,7 +346,7 @@ def _vip7(ctx):
                                  label=f"VIP: {ctx['user']}", user=ctx["user"])
     if ok:
         word = "extended" if msg == "extended" else "granted"
-        _say(ctx, f"⭐ VIP {word} for {ctx['user']} — {int(days)} days!")
+        _say(ctx, f"⭐ VIP {word} for {ctx['user']}: {int(days)} days!")
         announce(f"⭐ {ctx['user']} won VIP for {int(days)} days on the Lucky Wheel!", "purple")
     return ok, msg
 
@@ -366,7 +366,7 @@ def _game_poll(ctx):
     item = owed.add(f"Chat is voting on the next game ({ctx['user']}'s Lucky spin)",
                     user=ctx["user"], source="lucky:game_poll",
                     detail=", ".join(c["label"] for c in choices))
-    _say(ctx, f"🎮 {ctx['user']} lets chat pick the next game — vote now!")
+    _say(ctx, f"🎮 {ctx['user']} lets chat pick the next game. Vote now!")
     threading.Timer(secs + 5, _poll_result, args=(poll_id, item["id"])).start()
     return True, "poll open"
 
@@ -382,7 +382,7 @@ def _poll_result(poll_id, owed_id):
     owed.update(owed_id, text=f"Chat picked the next game: {best.get('title')}")
     try:
         from . import chat
-        chat.say(f"🎮 Chat has spoken — next game: {best.get('title')}!")
+        chat.say(f"🎮 Chat has spoken! Next game: {best.get('title')}!")
     except Exception:
         pass
 
@@ -391,14 +391,14 @@ def _emote_party(ctx):
     ok, msg, _ = timed.start("emote_mode", "chat", int(opt("emote_party_seconds")),
                              label="Emote-only chat", user=ctx["user"])
     if ok:
-        _say(ctx, f"🥳 EMOTE PARTY courtesy of {ctx['user']} — emotes only for "
+        _say(ctx, f"🥳 EMOTE PARTY courtesy of {ctx['user']}: emotes only for "
                   f"{int(opt('emote_party_seconds')) // 60} min!")
     return ok, msg
 
 
 def _name_run(ctx):
     owed.add(f"{ctx['user']} names your next run / character / save", user=ctx["user"], source="lucky:name_run")
-    _say(ctx, f"✍️ @{ctx['user']} reply in chat with a name — it goes on Neo's list!")
+    _say(ctx, f"✍️ @{ctx['user']} reply in chat with a name and it goes on Neo's list!")
     return True, "owed"
 
 
@@ -472,7 +472,7 @@ def _bets(ctx):
     if not helix.ok(code):
         return False, helix.error_text(code, body)
     owed.add(f"Resolve the prediction \"{title}\" on Twitch", user=ctx["user"], source="risky:bets")
-    _say(ctx, f"🎲 {ctx['user']} opened a prediction — place your bets!")
+    _say(ctx, f"🎲 {ctx['user']} opened a prediction. Place your bets!")
     return True, "prediction open"
 
 

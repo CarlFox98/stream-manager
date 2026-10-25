@@ -1,4 +1,4 @@
-"""prism-ctl — drive a running Stream Manager from another local process.
+"""prism-ctl: drive a running Stream Manager from another local process.
 
 This exists for the Stream Deck key. A key press runs a program; a program can't
 hold the dashboard's per-run session token, so it reads it out of
@@ -32,7 +32,7 @@ def _get(port, path, timeout=_TIMEOUT):
 
 
 def _post(port, path, token, payload, timeout=_TIMEOUT):
-    """(status, body). Returns the body even on 4xx — that's where the reason is."""
+    """(status, body). Returns the body even on 4xx, since that's where the reason is."""
     req = urllib.request.Request(
         f"http://127.0.0.1:{port}{path}",
         data=json.dumps(payload).encode("utf-8"),
@@ -70,7 +70,7 @@ def _port_busy(port, timeout=0.4):
     """Is anything listening there at all?
 
     live_instance() needs an /api/ping answer, and there are seconds where the
-    app is bound but not yet serving — the whole startup sequence runs after
+    app is bound but not yet serving: the whole startup sequence runs after
     the port is taken, and longer still on a first-run device login. Judging
     "not running" from that would have `prism-ctl start` launch a second
     instance, and two instances fight over OBS, chat and the log files.
@@ -83,7 +83,7 @@ def _port_busy(port, timeout=0.4):
 def _launch():
     """Start a supervised instance detached from this process."""
     if os.name == "nt" and os.path.isfile(LAUNCHER):
-        os.startfile(LAUNCHER)          # noqa: S606 — a file we ship, in our own folder
+        os.startfile(LAUNCHER)          # noqa: S606 (a file we ship, in our own folder)
         return True
     entry = os.path.join(BASE_DIR, "stream-manager.py")
     if not os.path.isfile(entry):
@@ -113,7 +113,7 @@ def _act(action):
 
 def cmd_undo():
     """Panic button: revert every short wheel effect (flip, tint, emote-only,
-    slow mode, overlay swap). Long ones like a week of VIP are left alone —
+    slow mode, overlay swap). Long ones like a week of VIP are left alone;
     revoke those from the dashboard's Wheel tab."""
     info, _ = live_instance()
     if not info:
@@ -133,7 +133,7 @@ def cmd_status():
     if not info:
         print("Stream Manager isn't running.")
         return 1
-    print(f"Stream Manager v{ping.get('version', '?')} — "
+    print(f"Stream Manager v{ping.get('version', '?')}, "
           f"PID {ping.get('pid', '?')} on http://localhost:{info['port']}")
     return 0
 
@@ -145,7 +145,7 @@ def cmd_start():
         return 0
     stale = read_runtime()
     if stale and _port_busy(stale.get("port")):
-        print("Stream Manager is starting up — give it a moment.")
+        print("Stream Manager is starting up; give it a moment.")
         return 0
     if not _launch():
         print("Couldn't find Start Stream Manager.bat or stream-manager.py.")

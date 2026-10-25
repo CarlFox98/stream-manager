@@ -43,7 +43,7 @@ def _gate(action, user, can_edit, say):
     if not ok and say and cooldowns.should_notify(action, user):
         secs = int(wait) + 1
         if scope == "global":
-            say(f"⏳ {action} is cooling down — try again in {secs}s")
+            say(f"⏳ {action} is cooling down, try again in {secs}s")
         else:
             say(f"⏳ @{user} you can use {action} again in {secs}s")
     return ok
@@ -67,9 +67,9 @@ def _wheel_cfg(kind):
 def _pick_weighted(segments, candidates=None):
     """Weighted index pick over `segments`, restricted to `candidates` indices.
 
-    `candidates` (a list of indices) lets callers exclude some slots — e.g. a
-    slot the viewer just landed on, or a 'severe' slot they're cooling down from
-    — while the winning index still refers to the full segment list.
+    `candidates` (a list of indices) lets callers exclude some slots (e.g. a
+    slot the viewer just landed on, or a 'severe' slot they're cooling down from)
+    while the winning index still refers to the full segment list.
     """
     idxs = list(range(len(segments))) if candidates is None else list(candidates)
     if not idxs:
@@ -239,7 +239,7 @@ def eligible_segments(kind, ctx):
 def _run_outcome_later(name, ctx, on_fail, delay, on_ok=None):
     """Run the outcome when the overlay's wheel stops, off the caller's thread.
     Success calls on_ok (fulfil the redemption); failure calls on_fail (refund)
-    and tells chat why. The redemption stays UNFULFILLED until then — Twitch
+    and tells chat why. The redemption stays UNFULFILLED until then, because Twitch
     can't refund one that has already been marked fulfilled."""
     from . import outcomes
 
@@ -254,7 +254,7 @@ def _run_outcome_later(name, ctx, on_fail, delay, on_ok=None):
             print(f"[games] outcome {name} failed: {msg}")
             if ctx.get("say"):
                 try:
-                    ctx["say"](f"⚠️ That outcome couldn't happen ({msg}) — {ctx['user']}'s points were refunded."
+                    ctx["say"](f"⚠️ That outcome couldn't happen ({msg}), so {ctx['user']}'s points were refunded."
                                if on_fail else f"⚠️ That outcome couldn't happen ({msg}).")
                 except Exception:
                     pass
@@ -281,7 +281,7 @@ def spin_wheel(kind, user, say=None, user_id="", login="", on_fail=None, on_ok=N
     pool = eligible_segments(kind, ctx)
     if not pool:
         if say:
-            say(f"⚠️ Nothing on the {cfg['title']} can happen right now — points refunded.")
+            say(f"⚠️ Nothing on the {cfg['title']} can happen right now, points refunded.")
         return None
     segments = _colored(pool)
     idx = _pick_wheel(kind, pool, user)   # weighted + anti-spam guards
@@ -299,7 +299,7 @@ def spin_wheel(kind, user, say=None, user_id="", login="", on_fail=None, on_ok=N
     stats.record("wheel", kind, user, winner)
     if say:
         icon = "🍀" if kind == "lucky" else "☠️"
-        say(f"{icon} {cfg['title']} — {user} landed on: {winner}")
+        say(f"{icon} {cfg['title']}: {user} landed on {winner}")
     name = winseg.get("outcome")
     if name:
         _run_outcome_later(name, ctx, on_fail, float(outcomes.opt("outcome_delay")), on_ok)
@@ -323,15 +323,15 @@ def slots(user, say=None, user_id=""):
     win = reels[0] == reels[1] == reels[2]
     near = (not win) and len(set(reels)) == 2
     effects.emit("slots", {"reels": reels, "win": win, "user": user},
-                 summary=f"{user or 'Someone'} spun {' '.join(reels)}" + (" — JACKPOT" if win else ""))
+                 summary=f"{user or 'Someone'} spun {' '.join(reels)}" + (": JACKPOT" if win else ""))
     stats.record("slots", "slots", user, "JACKPOT" if win else "".join(reels))
     if say:
         if win:
-            say(f"🎰 {user} — {' '.join(reels)} — JACKPOT! 🎉")
+            say(f"🎰 {user} spun {' '.join(reels)}: JACKPOT! 🎉")
         elif near:
-            say(f"🎰 {user} — {' '.join(reels)} — so close!")
+            say(f"🎰 {user} spun {' '.join(reels)}: so close!")
         else:
-            say(f"🎰 {user} — {' '.join(reels)} — no luck this time!")
+            say(f"🎰 {user} spun {' '.join(reels)}: no luck this time!")
     return "".join(reels)
 
 
@@ -348,7 +348,7 @@ def dice(user, say=None, sides=6):
 
 
 _EIGHT_BALL = [
-    "It is certain.", "Without a doubt.", "Yes — definitely.", "Most likely.",
+    "It is certain.", "Without a doubt.", "Yes, definitely.", "Most likely.",
     "Signs point to yes.", "Reply hazy, try again.", "Ask again later.",
     "Better not tell you now.", "Cannot predict now.", "Don't count on it.",
     "My reply is no.", "Very doubtful.", "Outlook not so good.", "Absolutely not.",
@@ -422,7 +422,7 @@ NAMED_ACTIONS = {
 def run_action(name, user="", say=None, user_id="", login="", on_fail=None, on_ok=None):
     """Trigger a game by canonical name (used by redemptions + dashboard tests).
 
-    user_id/login identify the redeeming viewer — VIP, timeout, featured and
+    user_id/login identify the redeeming viewer; VIP, timeout, featured and
     the DJ window all need them. Redemptions used to drop them, so automated
     outcomes silently had no target."""
     fn = NAMED_ACTIONS.get(name)

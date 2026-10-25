@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stream Manager — web dashboard + overlay server + system monitor
+Stream Manager: web dashboard + overlay server + system monitor
 """
 from stream_manager.cli import main
 

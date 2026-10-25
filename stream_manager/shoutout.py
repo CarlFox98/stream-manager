@@ -1,4 +1,4 @@
-"""Shoutouts — ported from the standalone PRISM Shoutout service.
+"""Shoutouts, ported from the standalone PRISM Shoutout service.
 
 One action funnels everything: `do_shoutout(login, source, viewers)` runs the
 safety gates, looks the streamer up on Helix, picks a clip, pushes a card to the
@@ -156,7 +156,7 @@ def _fetch_clips(uid, days):
 
 
 def _resolve_clip(uid, login):
-    """(clip_id, mp4_url, thumb, duration) — newest-recent tier, else popular tier."""
+    """(clip_id, mp4_url, thumb, duration): newest-recent tier, else popular tier."""
     try:
         c = _pick(_fetch_clips(uid, int(cfg("clip_recent_days"))), login,
                   lambda x: x.get("created_at", ""), int(cfg("clip_recent_pool")), True)
@@ -325,7 +325,7 @@ def _shoutout(login, source, viewers, say):
     if not cfg("enabled") or not _state["enabled"]:
         return False, "shoutouts are turned off"
     if login in {b.strip().lower() for b in (cfg("blocklist") or [])}:
-        print(f"[shoutout] blocklisted — refusing {login}")
+        print(f"[shoutout] blocklisted, refusing {login}")
         return False, f"{login} is on the shoutout blocklist"
     if login == (TWITCH_USER or "").lower() and not cfg("allow_self"):
         return False, "that's your own channel"
@@ -338,7 +338,7 @@ def _shoutout(login, source, viewers, say):
         if cfg("raid_require_approval"):
             _state["pending_raid"] = {"login": login, "viewers": viewers, "at": time.time()}
             if say:
-                say(f"◇ Raid from {login} is waiting for a mod to approve — type !so ok")
+                say(f"◇ Raid from {login} is waiting for a mod to approve. Type !so ok")
             return False, "waiting for a mod to approve the raid shoutout"
 
     now = time.time()
@@ -349,7 +349,7 @@ def _shoutout(login, source, viewers, say):
             return False, (f"{login} was just shouted out (or is on screen now); "
                            f"try again in about {int(wait) + 1}s")
         if max(0.0, _screen_free_at - now) > int(cfg("max_queue_sec")):
-            print(f"[shoutout] overlay backed up — dropping {login}")
+            print(f"[shoutout] overlay backed up, dropping {login}")
             return False, "the shoutout queue is full; try again shortly"
         # guard the whole lookup (several Helix calls), not just the cooldown
         _until[login] = now + int(cfg("lookup_guard_sec"))
@@ -368,7 +368,7 @@ def _shoutout(login, source, viewers, say):
 
     # The card is delivered to whichever overlay is long-polling the shoutout
     # channel. OBS shuts a browser source down while its scene is inactive, so
-    # on a scene with no shoutout overlay there is nobody to deliver to — and
+    # on a scene with no shoutout overlay there is nobody to deliver to, and
     # the effects bus deliberately does not replay a backlog to a late joiner.
     # The screen time and repeat guard below are still spent, so say so rather
     # than letting the card vanish silently.
@@ -439,7 +439,7 @@ def on_raid(login, viewers, say=None):
     return do_shoutout(login, "raid", viewers, say)
 
 
-# ── clip playback state (status only — see the note below) ──────────────────
+# ── clip playback state (status only; see the note below) ──────────────────
 #
 # NOT A DUCKING HOOK. The overlay reports when a clip really starts and stops,
 # and that is all this is for: the dashboard and the health monitor use it to

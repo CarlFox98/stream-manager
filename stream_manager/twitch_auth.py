@@ -1,13 +1,13 @@
 """User-token auth for interactive features (chat + channel-point redemptions).
 
 The dashboard/status side of Stream Manager only needs an *app* access token
-(client-credentials, read-only public data — see twitch.py). Chat and channel
+(client-credentials, read-only public data; see twitch.py). Chat and channel
 points need a *user* access token with scopes, tied to the broadcaster account.
 
 Auth flow: Twitch **Authorization Code Grant** with a local redirect. Stream
 Manager opens your browser straight to Twitch's consent screen; you click
 "Authorize" once and Twitch redirects back to a tiny callback the app serves at
-``/auth/callback`` — no codes to copy, no links to paste. The token is cached
+``/auth/callback``. No codes to copy, no links to paste. The token is cached
 (and silently refreshed) in a gitignored JSON file next to config.json.
 
 Works with either app type:
@@ -205,7 +205,7 @@ def _token_request(extra):
     """POST to the token endpoint, trying with the client secret first (needed
     by Confidential apps) and falling back to a secret-free request (Public apps
     / PKCE). Returns (code, body) of the first success. If all attempts fail,
-    returns the FIRST attempt's error — for a Confidential app that's the
+    returns the FIRST attempt's error; for a Confidential app that's the
     meaningful "invalid client secret", not the generic "missing client secret"
     the secret-free fallback would report."""
     base = {"client_id": TWITCH_CLIENT_ID, **extra}
@@ -325,13 +325,13 @@ def handle_callback(query):
         expected = _pending.get("state", "")
     if not code or not state or not expected or not secrets.compare_digest(state, expected):
         auth["status"] = "error"
-        auth["error"] = "login response didn't match this session — please try again"
+        auth["error"] = "login response didn't match this session; please try again"
         return False, auth["error"]
     with _lock:
         if not _exchange_code(code):
             auth["status"] = "error"
             return False, auth["error"]
-        # one-time use — clear so a replayed redirect can't re-run
+        # one-time use: clear so a replayed redirect can't re-run
         _pending["state"] = ""
         _pending["verifier"] = ""
     if _fetch_identity():

@@ -6,8 +6,8 @@ whole open-write-close cycle and rotates on size as it goes.
 Both of those exist because of real damage. The request log is written from every
 handler thread of a ThreadingHTTPServer, and the previous version opened the file
 fresh on each call with no lock at all. A stream on 2026-09-02 left eight torn
-fragments in server.log -- lines consisting of a single `l` and a stray carriage
-return -- where two threads' writes collided mid-line. Rotation was also checked
+fragments in server.log (lines consisting of a single `l` and a stray carriage
+return) where two threads' writes collided mid-line. Rotation was also checked
 only once at startup, so leaving the app running across several streams grew the
 file without bound (~75 KB per two-hour stream, so the 1 MB ceiling was about a
 day of streaming away).

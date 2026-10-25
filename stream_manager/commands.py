@@ -126,7 +126,7 @@ def upsert_custom(name, response, permission="everyone", enabled=True, user_cd=N
     if not _NAME_RE.match(name):
         return False, "Name must be 1-25 chars: letters, numbers, underscore"
     if canonical_for(name):
-        return False, f"'{name}' is a built-in command — toggle it in the built-ins list instead"
+        return False, f"'{name}' is a built-in command; toggle it in the built-ins list instead"
     response = (response or "").strip()
     if not response:
         return False, "Response text is required"

@@ -4,7 +4,7 @@ Status/user-info are public Helix reads, so they work with EITHER token type:
   • the interactive **user** token (from twitch_auth) if you've logged in, or
   • an **app** token via client-credentials (needs a Confidential app + a valid
     client secret).
-We prefer the user token when present — that way status still works for Public
+We prefer the user token when present; that way status still works for Public
 apps (which can't mint an app token) or when the client secret is missing/wrong,
 and we avoid asking Twitch for a second token we don't need.
 """
@@ -72,7 +72,7 @@ def invalidate_token():
 
 
 def get_access_token():
-    """A usable bearer token for public Helix reads — user token preferred."""
+    """A usable bearer token for public Helix reads (user token preferred)."""
     try:
         from . import twitch_auth
         ut = twitch_auth.get_user_token()

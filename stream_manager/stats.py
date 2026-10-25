@@ -4,7 +4,7 @@ Every game outcome is recorded here (in memory, flushed to data/stats.json on a
 short debounce). The dashboard reads summary() for leaderboards: most active
 players, jackpots, and the most common wheel outcomes.
 
-Kept intentionally small and best-effort — a corrupt/missing file just starts
+Kept intentionally small and best-effort: a corrupt/missing file just starts
 fresh, and a failed write is logged and ignored.
 """
 import json, os, threading, time

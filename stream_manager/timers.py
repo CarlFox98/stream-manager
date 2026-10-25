@@ -1,4 +1,4 @@
-"""Timed chat messages — auto-post reminders/socials on an interval.
+"""Timed chat messages: auto-post reminders/socials on an interval.
 
 Each timer posts its message to chat every `interval` minutes, but only once at
 least `min_lines` chat messages have gone by since it last fired (so timers

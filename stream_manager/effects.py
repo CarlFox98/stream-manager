@@ -3,7 +3,7 @@
 Two delivery styles share one bus:
 
 * **Overlays** hit ``GET /api/effects/<channel>?since=<id>``. The server
-  *long-polls* — it holds the request open (via ``wait_events``) until a newer
+  *long-polls*: it holds the request open (via ``wait_events``) until a newer
   event exists or a timeout elapses, so effects arrive within a network round
   trip instead of one poll interval, with far fewer requests.
 * **The dashboard** opens one ``GET /api/stream`` Server-Sent Events connection
@@ -47,7 +47,7 @@ def emit(channel, data, summary=None):
 
 
 def head(channel):
-    """Current latest id for a channel (0 if none) — for a consumer's first poll."""
+    """Current latest id for a channel (0 if none), for a consumer's first poll."""
     with _lock:
         q = _events.get(channel)
         return q[-1]["id"] if q else _seq
@@ -101,7 +101,7 @@ _last_poll = {}
 
 
 def note_poll(channel):
-    """Record that an overlay asked for this channel — its liveness heartbeat."""
+    """Record that an overlay asked for this channel (its liveness heartbeat)."""
     # Written from HTTP threads, read from the health-monitor thread; take the
     # lock so a new channel appearing mid-iteration can't blow up subscribers().
     with _lock:

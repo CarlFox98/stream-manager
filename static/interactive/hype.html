@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>PRISM — Hype</title>
+<title>PRISM: Hype</title>
 <!-- PRISM hype overlay for raids / bits / subs (driven by EventSub).
      OBS Browser Source, 1920x1080, transparent, above your scene.
      Poll source: GET /api/effects/hype?since=<id>.  Test: ?demo=raid|bits|sub -->
 <style>
-@import url('/overlays/PRISM/fonts/prism-fonts.css');   /* vendored — no network at load */
+@import url('/overlays/PRISM/fonts/prism-fonts.css');   /* vendored, no network at load */
 :root{ --ink:#EAF0FF; --ink-soft:#A9B4D6; --glass:rgba(14,16,28,0.46); --glass-deep:rgba(10,12,22,0.72);
   --c1:#57F2E4; --c2:#6C8BFF; --c3:#B983FF; --c4:#FF7ACb; --c5:#FFD86B; --accent:#FF7ACb; }
 *{ margin:0; padding:0; box-sizing:border-box; }
@@ -91,11 +91,11 @@ html,body{ width:100%; height:100%; overflow:hidden; background:transparent; fon
       root.style.setProperty("--accent", themed||th.accent);
       banner.className="banner k-"+k;
       emoji.textContent=th.emoji; kind.textContent=th.kind;
-      if(k==="raid"){ headline.textContent=(d.user||"")+" raided!"; sub.textContent="with "+(d.amount||0)+" viewers — welcome!"; }
-      else if(k==="bits"){ headline.textContent=(d.user||""); sub.textContent=(d.amount||0)+" bits — thank you!"; }
-      else if(k==="follow"){ headline.textContent=(d.user||""); sub.textContent="just followed — welcome!"; }
-      else if(k==="firstchat"){ headline.textContent=(d.user||""); sub.textContent="first time in chat — welcome! 👋"; }
-      else { headline.textContent=(d.user||""); sub.textContent=tierName(d.amount)+" sub — thank you!"; }
+      if(k==="raid"){ headline.textContent=(d.user||"")+" raided!"; sub.textContent="with "+(d.amount||0)+" viewers. Welcome!"; }
+      else if(k==="bits"){ headline.textContent=(d.user||""); sub.textContent=(d.amount||0)+" bits. Thank you!"; }
+      else if(k==="follow"){ headline.textContent=(d.user||""); sub.textContent="just followed. Welcome!"; }
+      else if(k==="firstchat"){ headline.textContent=(d.user||""); sub.textContent="first time in chat. Welcome! 👋"; }
+      else { headline.textContent=(d.user||""); sub.textContent=tierName(d.amount)+" sub. Thank you!"; }
       banner.classList.add("show"); if(window.SMFX) SMFX.hype(k);   /* kits may vary the cue by kind */
       setTimeout(function(){ banner.classList.remove("show"); }, 6000);
       setTimeout(res, 6600);

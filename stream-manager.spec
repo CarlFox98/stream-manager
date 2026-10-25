@@ -1,4 +1,4 @@
-# PyInstaller build spec — produces a single Stream Manager .exe.
+# PyInstaller build spec: produces a single Stream Manager .exe.
 # Build on Windows:  pip install pyinstaller  &&  pyinstaller --clean --noconfirm stream-manager.spec
 # Output: dist/StreamManager.exe  (put config.json / .env next to it; data/ + logs
 # are created alongside the exe on first run).

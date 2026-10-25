@@ -20,7 +20,7 @@ state = {
                "checked_at": 0.0},
     "system": {"cpu": 0, "ram_pct": 0, "ram_used_gb": 0, "ram_total_gb": 0, "gpu": ""},
     # `version` rides along on /api/status, which the dashboard already polls
-    # every 2s — the chip used to be hardcoded in dashboard.html and sat two
+    # every 2s. The chip used to be hardcoded in dashboard.html and sat two
     # releases stale, which is exactly the thing you want to glance at after
     # an update.
     # `supervised` is whether anything will relaunch us on exit code 42.

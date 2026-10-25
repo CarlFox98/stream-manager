@@ -15,12 +15,12 @@ from .state import state
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Stream Manager — web dashboard + overlay server + system monitor")
+    p = argparse.ArgumentParser(description="Stream Manager: web dashboard + overlay server + system monitor")
     p.add_argument("--port", type=int, default=0, help="Port to listen on (overrides config.json)")
     p.add_argument("--poll", type=int, default=0, help="Poll interval in seconds (overrides config.json)")
     p.add_argument("--no-browser", action="store_true", help="Don't open dashboard in browser")
     p.add_argument("--lan", action="store_true", help="Bind to 0.0.0.0 so other devices on your network can reach the dashboard (overrides config.json)")
-    p.add_argument("--allow-multiple", action="store_true", help="Start even if another Stream Manager is already running (not recommended — they fight over OBS, chat and the log files)")
+    p.add_argument("--allow-multiple", action="store_true", help="Start even if another Stream Manager is already running (not recommended; they fight over OBS, chat and the log files)")
     p.add_argument("--check-update", action="store_true", help="Check GitHub for a newer version and exit")
     p.add_argument("--update", action="store_true", help="Check, then (after confirmation) download & install the latest version")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -33,7 +33,7 @@ def _graceful_stop(server):
     Runs on EVERY exit path. This used to live inline in the KeyboardInterrupt
     handler, which was fine while Ctrl+C was the only way out. Restart and
     Shutdown are now two clicks away, so any exit path that skipped it would
-    silently drop cooldowns, spin history and session stats — several times a
+    silently drop cooldowns, spin history and session stats, several times a
     stream instead of once.
 
     Order matters. The loops are stopped BEFORE the saves, not after: chat,
@@ -43,13 +43,13 @@ def _graceful_stop(server):
     to be recorded into state that had already been saved, then thrown away.
 
     Every step is guarded on its own. A failure saving cooldowns must not skip
-    the spin history, and neither must leave the port bound — that is what
+    the spin history, and neither must leave the port bound; that is what
     would greet the relaunch one second later.
     """
     # Health goes FIRST. It samples chat and auth, so stopping them under a
     # still-running monitor made every Restart/Shut Down log "Twitch auth: not
     # authorized" + "chat: disconnected" as real alerts that were never cleared
-    # (7 of them on 2026-10-22 alone) — and could post a mod alert to chat.
+    # (7 of them on 2026-10-22 alone), and could post a mod alert to chat.
     for label, stop in (("health", health.stop),
                         ("chat", chat.stop), ("redeems", redeems.stop),
                         ("eventsub", eventsub.stop), ("timers", timers.stop),
@@ -210,9 +210,9 @@ def main():
         if DASHBOARD_PASSWORD:
             print(info("!", style('Y', "Bound to 0.0.0.0 (--lan). Remote devices need the dashboard password; localhost is exempt.")))
         else:
-            print(info("!", style('Y', "Bound to 0.0.0.0 (--lan) with NO password — anyone on your network can view it. Set SM_DASHBOARD_PASSWORD in .env to require one.")))
+            print(info("!", style('Y', "Bound to 0.0.0.0 (--lan) with NO password: anyone on your network can view it. Set SM_DASHBOARD_PASSWORD in .env to require one.")))
     else:
-        print(info("i", style('D', "Bound to 127.0.0.1 — local only. Use --lan to expose on your network")))
+        print(info("i", style('D', "Bound to 127.0.0.1 (local only). Use --lan to expose on your network")))
     for name, url in nav:
         print(info(f" {style('D', '→')}", f"{style('W', name):12s}  {style('D', url)}"))
     print(blank_row)
@@ -222,7 +222,7 @@ def main():
     obs_str = f"Running (PID {state['obs']['pid']})" if state['obs']['running'] else "Not running"
     print(info("OBS   ", f"{obs_icon} {style('D', obs_str)}"))
     sys_str = f"{state['system']['cpu']}% CPU  ·  {state['system']['ram_used_gb']}/{state['system']['ram_total_gb']} GB RAM"
-    gpu_name = state['system']['gpu'] or "—"
+    gpu_name = state['system']['gpu'] or "-"
     print(info("System", f"{icon(True)} {style('D', sys_str)}  ·  {gpu_name}"))
     print(blank_row)
     print(heading("Scene Set"))
@@ -236,14 +236,14 @@ def main():
         _av = ", ".join(_set_labels.get(n, n) + (style('G', ' ✓') if n == scene_active else "") for n in scene_avail)
         print(info("Sets  ", style('D', _av)))
     else:
-        print(info("Sets  ", style('Y', "none found — create overlays/modern/ and overlays/retro/")))
+        print(info("Sets  ", style('Y', "none found; create overlays/modern/ and overlays/retro/")))
     print(blank_row)
     print(heading("Overlays"))
     if overlays:
         for ov in overlays:
             print(info(f" {style('D', '▸')}", style('D', f"/overlays/{ACTIVE_DIRNAME}/{ov}")))
     else:
-        print(info("", style('Y', "No overlays in active/ — switch a scene set from the dashboard")))
+        print(info("", style('Y', "No overlays in active/. Switch a scene set from the dashboard")))
     print(blank_row)
     print(heading("Polling"))
     poll_str = f"every {config['poll_interval']}s"
@@ -254,7 +254,7 @@ def main():
         pfx = config.get("command_prefix", "!")
         print(info("Chat  ", style('D', f"{pfx}coinflip · {pfx}5050 · {pfx}quote [n] · {pfx}addquote (mods)")))
         print(info("Redeems", style('D', "Lucky Wheel Spin · Risky Wheel Spin (channel points)")))
-        print(info("Login ", style('D', "one-click — a browser window opens for you to approve")))
+        print(info("Login ", style('D', "one-click: a browser window opens for you to approve")))
         print(info("Redirect", style('D', twitch_auth.redirect_uri())))
         print(info(f" {style('D', '▸')}", style('D', "/static/interactive/wheel.html")))
         print(info(f" {style('D', '▸')}", style('D', "/static/interactive/coinflip.html")))
@@ -266,18 +266,18 @@ def main():
     print(separator)
     print()
 
-    # Non-blocking startup update check — a slow/failed GitHub call never delays startup
+    # Non-blocking startup update check: a slow/failed GitHub call never delays startup
     def _bg_update_check():
         updater.check_for_update()
         if updater.update_state.get("available"):
-            msg = f"Update available: {updater.update_state['latest']} (you have v{__version__}) — run --update or use the dashboard"
+            msg = f"Update available: {updater.update_state['latest']} (you have v{__version__}). Run --update or use the dashboard"
             print(f"  {style('Y', '●')} {style('Y', msg)}\n")
     threading.Thread(target=_bg_update_check, daemon=True).start()
 
     # ── interactive layer: user-token auth, chat client, redemption poller ──
     if config.get("interactive_enabled", True):
         if not TWITCH_CLIENT_ID:
-            print(f"  {style('Y', '●')} Interactive features need TWITCH_CLIENT_ID in .env — skipping.\n")
+            print(f"  {style('Y', '●')} Interactive features need TWITCH_CLIENT_ID in .env; skipping.\n")
         else:
             cooldowns.load()          # restore anti-spam windows from last run
             games.load_spin_history()

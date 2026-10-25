@@ -1,7 +1,7 @@
-# Interactive Features — Games & Redeems
+# Interactive Features: Games & Redeems
 
 This adds viewer-facing interaction to Stream Manager: **coin flip**, **50/50**,
-a **Lucky Wheel** and a **Risky Wheel**, plus a **quote system** — all triggerable
+a **Lucky Wheel** and a **Risky Wheel**, plus a **quote system**, all triggerable
 by **chat commands** and/or **Twitch channel-point redeems**, with **PRISM-styled
 OBS overlay animations** and **chat replies**.
 
@@ -18,23 +18,23 @@ API instead of EventSub), local by default, no external services.
 | Coin flip | `!coinflip` / `!flip` | *Coin Flip* (off by default) | coin overlay + chat |
 | 50 / 50 | `!5050` | *50/50* (off by default) | coin overlay + chat |
 | Slots | `!slots` | (add via config) | slots overlay + chat |
-| Dice | `!dice [sides]` / `!roll` | — | chat |
-| Magic 8-ball | `!8ball <question>` | — | chat |
-| Duel | `!duel @user` | — | chat |
+| Dice | `!dice [sides]` / `!roll` | - | chat |
+| Magic 8-ball | `!8ball <question>` | - | chat |
+| Duel | `!duel @user` | - | chat |
 | Lucky Wheel | `!lucky` (mods) | **Lucky Wheel Spin** (1,500) | wheel overlay + chat + real outcomes |
 | Risky Wheel | `!risky` (mods) | **Risky Wheel Spin** (2,500) | wheel overlay + chat + real outcomes |
-| Quotes | `!quote [n]`, `!addquote`, `!delquote`, `!quotecount` | — | chat |
-| Raid / Bits / Sub hype | — | (automatic via EventSub) | hype overlay + chat |
+| Quotes | `!quote [n]`, `!addquote`, `!delquote`, `!quotecount` | - | chat |
+| Raid / Bits / Sub hype | - | (automatic via EventSub) | hype overlay + chat |
 
 The two wheels are the redeem-driven headliners; coin flip / 50-50 / slots default
 to chat commands (flip their `enabled` flag in `config.json` → `redeems` to also
 expose them as channel-point redeems). Raid/bits/sub hype fires automatically when
 EventSub is connected.
 
-## New in v0.13.0 — wheels that actually do things
+## New in v0.13.0: wheels that actually do things
 
 Every Lucky / Risky segment now either **happens automatically** or lands on
-the dashboard's **Owed Rewards** list until you tick it off — nothing is
+the dashboard's **Owed Rewards** list until you tick it off, so nothing is
 announced once and forgotten. And a segment that *can't* happen right now
 (offline, Spotify not playing, the viewer is a mod…) is **left off the wheel**
 for that spin, so nobody lands on something impossible.
@@ -67,13 +67,13 @@ for that spin, so nobody lands on something impossible.
 - Everything timed is snapshotted to `data/active-effects.json` *before* it's
   applied and restored from that snapshot on its timer, at shutdown, and at the
   next start if Stream Manager crashed. **Undo all effects** is on the Wheel
-  tab (VIPs are separate — Revoke them individually).
+  tab (VIPs are separate; Revoke them individually).
 - OBS write access is limited to the one source named in
   `config.json → obs_effects` (PNG TUBER) and the filter Stream Manager made
   itself. It cannot switch scenes or touch the stream.
 - The wheel rewards **pause on Twitch** whenever the program scene isn't one of
-  `redeems.allowed_scenes` (Game / Desktop), and when Stream Manager closes —
-  nobody spends points on a spin nobody sees. If the OBS scene is unknown they
+  `redeems.allowed_scenes` (Game / Desktop), and when Stream Manager closes,
+  so nobody spends points on a spin nobody sees. If the OBS scene is unknown they
   stay on.
 - A redemption is only marked fulfilled once its outcome has actually happened;
   if it fails, the viewer is **refunded** and chat is told why.
@@ -88,25 +88,25 @@ for one (add to queue). Click **Authorize** / **Connect Spotify** once.
 
 ## New in v0.6.0
 
-- **One-click Twitch login** — a browser window opens straight to Twitch's
+- **One-click Twitch login**: a browser window opens straight to Twitch's
   consent screen; click **Authorize** once and you're done. No more copying a
   code or a link. Re-authorize or sign out any time from the dashboard.
-- **Locked-down controls** — every state-changing endpoint (scene switch,
+- **Locked-down controls**: every state-changing endpoint (scene switch,
   update install, config reload, authorize, quotes) now requires the
   dashboard's per-run token, so nothing else on your network (or a random
   website you visit) can drive them. The server is back to **localhost-only**
   by default.
-- **Hardened serving** — overlay/static file serving is stricter about staying
+- **Hardened serving**: overlay/static file serving is stricter about staying
   inside its folder, dashboard output is HTML-escaped (no injection via
   usernames/overlay labels), and the JSON API no longer sends wildcard CORS.
 
 ## New in v0.5.0
 
-- **EventSub** — near-instant redemptions and **raid / bits / sub** hype (needs
+- **EventSub**: near-instant redemptions and **raid / bits / sub** hype (needs
   the optional `websocket-client`; falls back to polling automatically).
-- **Automated wheel outcomes** — segments can auto **switch scene / grant VIP /
+- **Automated wheel outcomes**: segments can auto **switch scene / grant VIP /
   shoutout / timeout** (opt-in, allowlisted; see *Automation* below).
-- **More games** — slots, dice, 8-ball, duel.
+- **More games**: slots, dice, 8-ball, duel.
 - **Sound** on the overlays (synthesized, no files; mute with `?muted`).
 - **Leaderboard & stats**, **config hot-reload** (♻️ on the dashboard), reward
   **de-dupe by ID**, **refund-on-failure**, and **persistent** cooldowns/anti-spam.
@@ -124,13 +124,13 @@ for one (add to queue). Click **Authorize** / **Connect Spotify** once.
    ```
 
    (If Stream Manager binds a different port because 5000 was busy, the console
-   banner and dashboard show the exact URL to register — it's also printed as
+   banner and dashboard show the exact URL to register; it's also printed as
    **Redirect** in the startup banner.) Either **Public** or **Confidential**
    client type works: with a client secret in `.env` the app uses the standard
    secret exchange; without one it uses PKCE automatically.
 
 2. **Run it and click Authorize.** `python stream-manager.py`. On first launch a
-   **browser window opens straight to Twitch's consent screen** — approve with
+   **browser window opens straight to Twitch's consent screen**. Approve with
    **your broadcaster account** and you're connected. Nothing to copy or paste.
    If the window doesn't open (e.g. a headless box), the console prints the link
    and the dashboard's *Interactive* card has a **Login with Twitch** button.
@@ -145,7 +145,7 @@ for one (add to queue). Click **Authorize** / **Connect Spotify** once.
    `channel:manage:vips`, `moderator:manage:banned_users`,
    `moderator:manage:shoutouts`. (The last three power the automated outcomes;
    if you'd rather not grant them, set `automation.enabled` to `false` in
-   `config.json` — everything else still works.)
+   `config.json`; everything else still works.)
 
 3. **Rewards auto-create.** On startup the app ensures the enabled channel-point
    rewards exist (creating *Lucky Wheel Spin* and *Risky Wheel Spin* if missing).
@@ -159,6 +159,9 @@ for one (add to queue). Click **Authorize** / **Connect Spotify** once.
    - `http://localhost:5000/static/interactive/coinflip.html`  (coin + 50/50)
    - `http://localhost:5000/static/interactive/slots.html`  (slot machine)
    - `http://localhost:5000/static/interactive/hype.html`  (raid / bits / sub)
+   - `http://localhost:5000/static/interactive/shoutout.html`  (`!so` card + clip)
+   - `http://localhost:5000/static/interactive/status.html`  (active wheel effects, with countdowns)
+   - `http://localhost:5000/static/interactive/featured.html`  (Featured Viewers, for Starting Soon)
 
    They show nothing until something is triggered, then animate and fade out.
    Add `?muted` to a URL to silence its sound, or `?vol=0.4` to set volume.
@@ -206,8 +209,8 @@ Higher weight = lands more often. Keep 6–10 segments for readability. Emoji wo
 
 Two independent layers stop spam:
 
-**Redeems** are limited by Twitch itself, *before* a viewer's points are spent —
-set per redeem in `config.json` → `redeems`:
+**Redeems** are limited by Twitch itself, *before* a viewer's points are spent.
+Set them per redeem in `config.json` → `redeems`:
 
 | Field | Default (wheels) | Meaning |
 |---|---|---|
@@ -215,7 +218,7 @@ set per redeem in `config.json` → `redeems`:
 | `max_per_user_per_stream` | `3` | Per-viewer cap each stream (`0` = unlimited) |
 | `max_per_stream` | `0` | Total cap each stream (`0` = unlimited) |
 
-These are pushed onto the Twitch reward on startup and **kept in sync** — edit
+These are pushed onto the Twitch reward on startup and **kept in sync**: edit
 them in `config.json`, restart, and existing rewards are updated (no need to
 delete/recreate).
 
@@ -234,8 +237,8 @@ everyone (`global`) window in seconds:
 `mods_bypass: true` lets you and your mods trigger without waiting. A blocked
 viewer gets a single brief "on cooldown" reply (throttled so it can't spam).
 
-> Note: coinflip / 50-50 don't award channel points in the code — a "WIN" is
-> just a fun outcome — so they can't be farmed for points. The cooldown is there
+> Note: coinflip / 50-50 don't award channel points in the code (a "WIN" is
+> just a fun outcome), so they can't be farmed for points. The cooldown is there
 > purely to stop overlay/chat spam.
 
 ### Wheel anti-spam (no-repeat + severe cooldown)
@@ -243,9 +246,9 @@ viewer gets a single brief "on cooldown" reply (throttled so it can't spam).
 On top of the Twitch caps, each wheel has two per-viewer guards (set on the
 wheel in `config.json` → `wheels.<lucky|risky>`):
 
-- `no_repeat` (default `true`) — a viewer never lands on the **exact same slot
+- `no_repeat` (default `true`): a viewer never lands on the **exact same slot
   twice in a row** (as long as another slot is available).
-- `severe_cooldown_seconds` (default `900` on the risky wheel) — mark any harsh
+- `severe_cooldown_seconds` (default `900` on the risky wheel): mark any harsh
   slot with `"severe": true` (the 60s timeout is, by default) and a viewer who
   hits a severe slot can't hit *any* severe slot again for that many seconds.
   Everyone else's spins are unaffected.
@@ -253,7 +256,7 @@ wheel in `config.json` → `wheels.<lucky|risky>`):
 This is tracked per viewer in memory (resets when you restart), so one person
 can't get chain-timed-out by bad luck or by farming redeems.
 
-## Security — keep privileges off the wheel
+## Security: keep privileges off the wheel
 
 The default Lucky Wheel deliberately contains **no "temp mod" / privilege
 rewards.** Granting moderator powers for a few hundred channel points is a real
@@ -261,11 +264,11 @@ risk: mods can ban, delete messages, edit your stream info, and run commands.
 VIP is much safer (cosmetic; no moderation powers) and is included, but if you
 ever add a privilege reward, gate it behind a very high cost and a tiny weight.
 
-Also by design the app only **announces** outcomes — it never auto-mods, auto-VIPs,
+Also by design the app only **announces** outcomes; it never auto-mods, auto-VIPs,
 or times anyone out. You grant rewards yourself, so a wheel result can't directly
 change anyone's permissions.
 
-## Automation — auto-granting outcomes (opt-in)
+## Automation: auto-granting outcomes (opt-in)
 
 By default outcomes are announced and logged for you to grant. If you turn on
 `automation.enabled` in `config.json`, a wheel segment with an `"action"` field
@@ -273,14 +276,14 @@ will actually perform it. The allowlist (anything else is ignored):
 
 | action | what it does | scope |
 |---|---|---|
-| `scene:<set>` | switch overlay scene set (e.g. `scene:retro`) | — |
+| `scene:<set>` | switch overlay scene set (e.g. `scene:retro`) | - |
 | `vip` | grant the redeeming viewer VIP | `channel:manage:vips` |
 | `shoutout` | `/shoutout` the viewer (or `shoutout:<login>`) | `moderator:manage:shoutouts` |
 | `timeout:<sec>` | time the redeeming viewer out (self-inflicted) | `moderator:manage:banned_users` |
 
 Example segment: `{ "label": "VIP for a week", "weight": 1, "action": "vip" }`.
 Per-action switches (`allow_vip`, `allow_timeout`, …) let you disable any one
-without editing the wheel. There is **no `mod` action** — that's intentional.
+without editing the wheel. There is **no `mod` action**, and that's intentional.
 Automation only fires when there's a real target viewer, so dashboard test spins
 won't VIP/timeout anyone (a `scene:` action will still switch, for testing).
 
@@ -298,13 +301,13 @@ types under `config.json` → `eventsub`.
 The dashboard's *Interactive* card shows a live leaderboard (most active players,
 wins) and recent results, backed by `data/stats.json`. Edited the wheels or
 cooldowns? Hit **♻️ Reload config** (or `POST /api/interactive/reload`) to apply
-`config.json` changes — including pushing new reward costs/limits to Twitch —
+`config.json` changes (including pushing new reward costs/limits to Twitch)
 without restarting.
 
 ### Granting non-automated rewards
 Outcomes without an `action` (e.g. *show your sona*, *pick the next song*) are
 announced on the overlay and in chat and logged in the dashboard's *Recent
-results* feed — you grant those yourself.
+results* feed; you grant those yourself.
 
 ---
 
@@ -332,15 +335,15 @@ Dashboard test button ──────────┘            │
                         twitch_auth.py  (user token via Authorization Code + local callback, cached + refreshed)
 ```
 
-- **twitch_auth.py** — user token via the Authorization Code flow with a local
+- **twitch_auth.py**: user token via the Authorization Code flow with a local
   `/auth/callback` redirect (one-click browser login, PKCE or secret); cache +
   refresh; resolves `broadcaster_id`.
-- **chat.py** — raw TLS IRC client (`irc.chat.twitch.tv:6697`), tags parsing, reconnect, `say()`.
-- **redeems.py** — ensures rewards exist, polls the UNFULFILLED queue, dispatches, fulfils.
-- **games.py** — coinflip / 50-50 / weighted wheels + the chat-command dispatcher.
-- **quotes.py** — numbered, JSON-persisted quote book (`data/quotes.json`).
-- **effects.py** — in-memory event bus; overlays long-poll `/api/effects/<channel>?since=<id>`.
-- **overlays** — `static/interactive/{wheel,coinflip}.html`, self-contained PRISM-styled.
+- **chat.py**: raw TLS IRC client (`irc.chat.twitch.tv:6697`), tags parsing, reconnect, `say()`.
+- **redeems.py**: ensures rewards exist, polls the UNFULFILLED queue, dispatches, fulfils.
+- **games.py**: coinflip / 50-50 / weighted wheels + the chat-command dispatcher.
+- **quotes.py**: numbered, JSON-persisted quote book (`data/quotes.json`).
+- **effects.py**: in-memory event bus; overlays long-poll `/api/effects/<channel>?since=<id>`.
+- **overlays**: `static/interactive/{wheel,coinflip}.html`, self-contained PRISM-styled.
 
 New HTTP endpoints: `GET /api/effects/<channel>`, `GET /api/interactive`,
 `GET /api/quotes`, `GET /auth/callback` (Twitch redirect), `POST /api/interactive/test`,
@@ -361,10 +364,10 @@ in an EventSub websocket is a clean future upgrade.
 
 - Requires **Twitch Affiliate/Partner** for channel points (you're set). Chat
   commands work regardless.
-- Rewards are only manageable/fulfillable because *this app* creates them — a
+- Rewards are only manageable/fulfillable because *this app* creates them. A
   reward you made by hand in the Twitch dashboard can't have its redemptions
   read via the API, so let the app create the wheel rewards.
 - The bot posts as **your** account (the one you authorize). To use a separate
-  bot account, authorize with that account instead — just make sure it's a mod
+  bot account, authorize with that account instead; just make sure it's a mod
   in your channel.
 - Everything binds to `127.0.0.1` unless you pass `--lan`.

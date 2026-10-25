@@ -27,7 +27,7 @@ def _load():
     except FileNotFoundError:
         _items = []
     except Exception as e:
-        print(f"[owed] owed.json unreadable ({e}) — starting empty")
+        print(f"[owed] owed.json unreadable ({e}), starting empty")
         _items = []
     _loaded = True
 

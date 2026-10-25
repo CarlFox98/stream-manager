@@ -119,7 +119,7 @@ def all_quotes():
 
 
 def format_quote(q):
-    """Render a quote for chat, e.g.  #12: "gg" — NeoTheFox98 [Halo, 2026-07-25]."""
+    """Render a quote for chat, e.g.  #12: "gg" (added by NeoTheFox98) [Halo, 2026-07-25]."""
     if not q:
         return ""
     meta = []
@@ -128,5 +128,5 @@ def format_quote(q):
     if q.get("date"):
         meta.append(q["date"])
     tail = f" [{', '.join(meta)}]" if meta else ""
-    who = f" — {q['added_by']}" if q.get("added_by") else ""
+    who = f" (added by {q['added_by']})" if q.get("added_by") else ""
     return f'#{q["id"]}: "{q["text"]}"{who}{tail}'

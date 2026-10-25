@@ -1,4 +1,4 @@
-/* PRISM interactive overlays — tiny WebAudio sound kit (no audio files).
+/* PRISM interactive overlays: tiny WebAudio sound kit (no audio files).
    Synthesizes cues at runtime so overlays stay self-contained.
 
    URL params (add to the browser-source URL):

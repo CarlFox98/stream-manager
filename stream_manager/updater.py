@@ -6,7 +6,7 @@ it, but NEVER installs without explicit confirmation. Since the app is now a
 multi-file source tree (stream-manager.py + the stream_manager/ package +
 static/), updates are fetched as GitHub's auto-generated release source
 archive (the "zipball") rather than a single raw file, and only the app's own
-paths are replaced — config.json, .env, logs, and backups are left alone.
+paths are replaced; config.json, .env, logs, and backups are left alone.
 """
 import ast, hashlib, io, json, os, shutil, tempfile, urllib.error, urllib.parse, urllib.request, zipfile
 
@@ -16,7 +16,7 @@ from .config import BASE_DIR
 GITHUB_OWNER = "CarlFox98"
 GITHUB_REPO = "stream-manager"
 
-# The update archive must come from GitHub over HTTPS — never install code
+# The update archive must come from GitHub over HTTPS. Never install code
 # fetched from anywhere else, even if the release JSON is somehow tampered with.
 _ALLOWED_HOSTS = {"api.github.com", "codeload.github.com", "github.com",
                   "objects.githubusercontent.com"}
@@ -128,7 +128,7 @@ def download_update():
     """
     url = update_state.get("download_url")
     if not url:
-        return False, "No download URL — run a version check first", None
+        return False, "No download URL; run a version check first", None
     if not _is_trusted_url(url):
         return False, f"Refusing to download: untrusted URL host ({url})", None
     try:
@@ -165,12 +165,12 @@ def install_update(staged_root):
     """
     Back up the current app files and swap in the staged ones. Caller is
     responsible for having obtained confirmation first. Returns (ok, message).
-    Only SYNCED_PATHS are touched — config.json, .env, logs, and old backups
+    Only SYNCED_PATHS are touched; config.json, .env, logs, and old backups
     are left alone. Backs everything up before changing anything, so a
     failure during backup leaves the current install untouched.
     """
     if not staged_root or not os.path.isdir(staged_root):
-        return False, "No staged update found — download first"
+        return False, "No staged update found; download first"
     ok, why = _validate_staged_tree(staged_root)
     if not ok:
         return False, f"Refusing to install: {why}"
@@ -209,4 +209,4 @@ def install_update(staged_root):
         shutil.rmtree(os.path.dirname(staged_root), ignore_errors=True)  # clean staging temp dir
         return True, "Installed update. Previous version backed up to .update-backup/. Restart to apply."
     except Exception as e:
-        return False, f"Install failed ({e}) — check .update-backup/ if files look mixed up"
+        return False, f"Install failed ({e}). Check .update-backup/ if files look mixed up"

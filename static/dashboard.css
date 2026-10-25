@@ -1,5 +1,5 @@
 /* ======================================================================
-   Stream Manager dashboard — PRISM theme
+   Stream Manager dashboard: PRISM theme
    Palette matches overlays/PRISM (teal / blue / purple / pink / gold).
    ====================================================================== */
 :root {
@@ -203,7 +203,7 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, .url-item:focus
 }
 .scene-btn:disabled { opacity: 0.45; cursor: default; }
 /* The active set is disabled (can't switch to what's already on) but it's the
-   selected option, not an unavailable one — so it must not look faded. */
+   selected option, not an unavailable one, so it must not look faded. */
 .scene-btn.current:disabled { opacity: 1; color: #fff; }
 
 /* Restart and Shut Down arm on the first click and fire on the second. A
@@ -337,7 +337,7 @@ a:focus-visible, button:focus-visible, [tabindex]:focus-visible, .url-item:focus
 @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* ── Connection banner ───────────────────────────────────────────────── */
-/* Same bug, same fix — this one only shows when the connection drops, which is
+/* Same bug, same fix. This one only shows when the connection drops, which is
    why it was never noticed. Fixing one without the other just hides it again. */
 .conn-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 40; display: none;
   text-align: center; font-size: 13px; font-weight: 600; color: #241a00;
@@ -467,7 +467,7 @@ textarea.field { min-height: 120px; resize: vertical; font-family: var(--mono); 
 
 /* ── Stream Health Monitor ───────────────────────────────────────────── */
 /* fixed, not sticky: <body> is a flex ROW, so a visible in-flow banner became
-   a flex item — a full-height column painted beside the sidebar instead of a
+   a flex item: a full-height column painted beside the sidebar instead of a
    bar across the top. The rounded bottom corners below always intended a bar
    hanging off the top edge; sticky never took it out of the row. */
 .health-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 50; display: none;

@@ -3,7 +3,7 @@
 `chat.py` already holds the IRC connection and parses tags; this module turns
 one parsed PRIVMSG into the JSON object the overlay renders, and owns the
 badge-URL cache. Everything here is pure except `_badge_map()`, which does one
-cached Helix read — that keeps the interesting logic unit-testable without a
+cached Helix read, which keeps the interesting logic unit-testable without a
 network or a live Twitch.
 
 Contract version 1. Bump CONTRACT_VERSION whenever a field changes meaning so a
@@ -49,7 +49,7 @@ def unescape_tag(v):
 
 
 # ---------------------------------------------------------------- badges ----
-# `_badges()` runs on the IRC receive thread — the same thread that answers
+# `_badges()` runs on the IRC receive thread, the same thread that answers
 # Twitch's PING and dispatches every !command. So the Helix fetch NEVER happens
 # inline: callers get the current (possibly empty) map at once and a single
 # background thread refreshes it. The first messages of a session may render
@@ -60,7 +60,7 @@ _badge_cache = {"map": {}, "at": 0.0, "ok": False}
 _badge_refreshing = False
 _BADGE_TTL = 3600.0     # a good map stays good for an hour
 # Applies while we have never had a map. Once one fetch has succeeded, `ok`
-# stays true and a later failure backs off the full TTL — deliberate: the map
+# stays true and a later failure backs off the full TTL. That is deliberate: the map
 # we already hold is still correct, so there is nothing to hurry for.
 _BADGE_RETRY = 60.0
 
@@ -97,7 +97,7 @@ def _build_badge_map():
 
 
 def _refresh_badges():
-    """Body of the refresh. Never raises; ALWAYS clears the in-flight flag —
+    """Body of the refresh. Never raises; ALWAYS clears the in-flight flag;
     a thread that died without clearing it would freeze badges for the session."""
     global _badge_refreshing
     try:
@@ -203,7 +203,7 @@ def _split_mentions(text, self_login):
 
 
 # A /me line arrives CTCP-wrapped, and Twitch measures emote offsets against
-# the WRAPPED string — so the prefix length must be subtracted, not ignored.
+# the WRAPPED string, so the prefix length must be subtracted, not ignored.
 _ACTION_PREFIX = "\x01ACTION "
 
 
@@ -220,7 +220,7 @@ def _spans_fit(text, spans, offset, strict=True):
 
     `strict` also demands the span be delimited by whitespace or a string edge.
     Twitch matches emote codes as whole space-separated words, so a real span
-    always is — and without that demand a shifted span happily lands INSIDE the
+    always is, and without that demand a shifted span happily lands INSIDE the
     preceding word: 'absolutely Kappa' with a body-relative 11-15 shifted by 8
     gives 'olute', which has no whitespace and was accepted, rendering the emote
     image over the middle of 'absolutely'.
@@ -373,11 +373,11 @@ def message(tags, prefix, text):
 
 # ------------------------------------------------------------ moderation ----
 # Until these existed, a message a mod deleted stayed on the overlay until it
-# scrolled off — and with ?ageout=0 (the default) that meant the rest of the
+# scrolled off, and with ?ageout=0 (the default) that meant the rest of the
 # stream. Both arrive on the twitch.tv/commands + twitch.tv/tags capabilities
 # chat.py already requests, so nothing new is negotiated for them.
 def clearmsg(tags, text=""):
-    """CLEARMSG — a single message deleted. `target-msg-id` is the id the
+    """CLEARMSG: a single message deleted. `target-msg-id` is the id the
     overlay tagged the node with, so removal needs no server-side buffer."""
     return {"v": CONTRACT_VERSION, "kind": "clearmsg",
             "ts": int(time.time() * 1000),
@@ -387,7 +387,7 @@ def clearmsg(tags, text=""):
 
 
 def clearchat(tags, target_login=""):
-    """CLEARCHAT — a timeout or ban (one user), or a full clear.
+    """CLEARCHAT: a timeout or ban (one user), or a full clear.
 
     Twitch sends `target-user-id` plus a trailing login for one user and omits
     both when the whole room is cleared, so empty user_id AND login means
@@ -426,7 +426,7 @@ def _event_label(mid, tags):
     if mid == "sub":
         return "sub", f"subscribed{' with ' + tier if tier else ''}!"
     if mid == "resub":
-        return "resub", f"resubscribed — {months} months{' · ' + tier if tier else ''}!"
+        return "resub", f"resubscribed for {months} months{' · ' + tier if tier else ''}!"
     if mid == "subgift":
         to = unescape_tag(tags.get("msg-param-recipient-display-name") or "")
         return "gift", f"gifted a {tier or 'Tier 1'} sub to {to}!"

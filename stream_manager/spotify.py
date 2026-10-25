@@ -1,4 +1,4 @@
-"""Spotify now-playing — powers the !song command and the dashboard widget.
+"""Spotify now-playing: powers the !song command and the dashboard widget.
 
 Uses Spotify's Authorization Code flow with a local ``/auth/spotify/callback``
 redirect (one-click, same UX as the Twitch login). Works with a Confidential
@@ -168,7 +168,7 @@ def handle_callback(query):
         verifier = _pending.get("verifier", "")
     if not code or not state or not secrets.compare_digest(state, expected):
         auth["status"] = "error"
-        auth["error"] = "login response didn't match — try again"
+        auth["error"] = "login response didn't match; try again"
         return False, auth["error"]
     fields = {"grant_type": "authorization_code", "code": code, "redirect_uri": _redirect_uri}
     if verifier and not SPOTIFY_CLIENT_SECRET:
@@ -250,7 +250,7 @@ _TRACK_RE = __import__("re").compile(
 
 def parse_track_id(text):
     """The track id from a Spotify link or URI in a chat line, or None.
-    Albums, playlists, episodes and artists are rejected — only tracks queue."""
+    Albums, playlists, episodes and artists are rejected; only tracks queue."""
     m = _TRACK_RE.search(text or "")
     return m.group(1) if m else None
 
@@ -304,7 +304,7 @@ def queue_track(uri):
     if code == 404:
         return False, "Spotify isn't playing on any device right now"
     if code == 401:
-        return False, "Spotify login expired — reconnect it on the dashboard"
+        return False, "Spotify login expired; reconnect it on the dashboard"
     return False, f"Spotify error {code}" if code else "Spotify unreachable"
 
 
@@ -317,7 +317,8 @@ def song_line():
     np = now_playing()
     if not np or not np.get("title"):
         return None
-    return f"🎵 Now playing: {np['title']} — {np['artist']}".strip(" —")
+    artist = (np.get("artist") or "").strip()
+    return f"🎵 Now playing: {np['title']}".strip() + (f" by {artist}" if artist else "")
 
 
 def public_status():

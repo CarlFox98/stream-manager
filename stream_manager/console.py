@@ -1,4 +1,4 @@
-"""Terminal ANSI styling helpers — PRISM palette.
+"""Terminal ANSI styling helpers, PRISM palette.
 
 Colors match the PRISM overlay theme (prism-theme.css): teal #57F2E4,
 blue #6C8BFF, purple #B983FF, pink #FF7ACB, gold #FFD86B on near-black.
@@ -53,7 +53,7 @@ def style(tag, text=""):
 
 
 def grad(text, bold=True):
-    """Color each letter across the PRISM ramp — the iridescent wordmark look."""
+    """Color each letter across the PRISM ramp for the iridescent wordmark look."""
     b = S["B"] if bold else ""
     out, i = [], 0
     for ch in text:
