@@ -1,31 +1,31 @@
 # Stream Manager
 
-A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system status at a glance, browser-source overlays that survive theme switches, and a self-update mechanism — all served from a single Python script with no external services required.
+A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system status at a glance, browser-source overlays that survive theme switches, and a self-update mechanism, all served from a single Python script with no external services required.
 
 ## Features
 
-- **Control-center dashboard** — a tabbed UI (Overview · Health · Interactive · Commands · Timers · Quotes · Config · Log) at `http://localhost:5000/dashboard`, with live OBS/Twitch/system status, a health strip, toasts, and a connection banner
-- **Command Manager** — toggle any built-in command on/off (hand one to another bot) and create custom `!name → response` commands, right from the dashboard
-- **Visual config editor** — edit cooldowns, redeems, wheels, automation, EventSub, and alerts live (saved to `config.json`, validated) — no hand-editing JSON
+- **Control-center dashboard**: a tabbed UI (Overview · Health · Interactive · Commands · Timers · Quotes · Config · Log) at `http://localhost:5000/dashboard`, with live OBS/Twitch/system status, a health strip, toasts, and a connection banner
+- **Command Manager**: toggle any built-in command on/off (hand one to another bot) and create custom `!name → response` commands, right from the dashboard
+- **Visual config editor**: edit cooldowns, redeems, wheels, automation, EventSub, and alerts live (saved to `config.json`, validated), no hand-editing JSON
 - **Real OBS status** via OBS's built-in WebSocket API, falling back to cross-platform process detection (psutil) if it's not configured
-- **Twitch status** — live/offline, title, game, viewer count, via the Twitch Helix API
-- **Overlay scene sets** — switch your whole overlay theme from the dashboard; OBS Browser Sources point at stable URLs
-- **Interactive games & redeems** — coin flip, 50/50, slots, dice, 8-ball, duel, and weighted **Lucky** / **Risky** wheels via chat commands *and* channel-point redeems, with PRISM overlays (with sound). Plus a **quote system**, **timed messages**, **first-chatter & new-follower alerts**, raid/bits/sub hype via EventSub, opt-in automated outcomes, a leaderboard, and cooldowns. See **[INTERACTIVE.md](INTERACTIVE.md)**
-- **Stream Health Monitor** — watches dropped frames, **sustained bitrate vs target** (catches the quality loss Dynamic Bitrate hides), congestion, render/encode lag, **a muted or mis-bound microphone**, CPU/RAM, free disk, chat/EventSub/auth and overlay heartbeats; raises a banner + toast + beep (and optionally a chat notice) the moment something goes wrong, logs every incident to `data/health-log.jsonl`, and offers a one-click **preflight** check before you go live
-- **Chat feed for overlays** — every chat message is normalised and published on a `chat` effects channel, so an overlay can render chat with no second IRC connection and no second set of credentials. Badges, Twitch emotes, mentions, replies, cheers, `/me` and moderation (`CLEARMSG` / `CLEARCHAT`) all come through. `GET /api/chat/backfill?n=25` returns the newest messages still in the ring buffer so an overlay repopulates after an OBS refresh. PRISM's chat overlay is deployed into `static/chat/` and consumes it
-- **Real-time** — overlays get effects instantly (long-poll) and the dashboard streams live events (SSE)
-- **Spotify now-playing** — one-click connect, a `!song` command, and a dashboard widget (optional)
-- **One-click Twitch login** — a browser window opens for you to approve; no codes to copy
-- **Start, restart and shut down without a console** — Restart and Shut Down buttons on the dashboard (two clicks, no undo), a system-tray icon that owns the process, and a `prism-ctl` command a Stream Deck key can run. Restarting re-reads `config.json` and reconnects Twitch and OBS without touching the port your browser sources point at
-- **Shoutouts** — `!so @user` (and an automatic one on raids) shows a PRISM card with the streamer's avatar, last category and a recent clip, with mod controls (`!so skip|clear|on|off|ok`), a blocklist, cooldowns and an optional mod approval step for raid shoutouts. Configure it under `shoutout` in `config.json`
-- **Claude integration (optional)** — an MCP server lets Claude check OBS, Twitch, preflight and stream health, and, with your approval for each call, run shoutouts, switch the overlay theme, undo wheel effects, add quotes, and start or restart Stream Manager (never while you're live). See **[Claude (MCP server)](#claude-mcp-server)**
-- **Self-update** — checks GitHub Releases and installs from the dashboard (HTTPS-only, integrity-logged, with a backup first)
-- **Local by default & LAN-safe** — binds to `127.0.0.1`; with `--lan`, controls stay token-locked and you can require a password for remote devices
+- **Twitch status**: live/offline, title, game, viewer count, via the Twitch Helix API
+- **Overlay scene sets**: switch your whole overlay theme from the dashboard; OBS Browser Sources point at stable URLs
+- **Interactive games & redeems**: coin flip, 50/50, slots, dice, 8-ball, duel, and weighted **Lucky** / **Risky** wheels via chat commands *and* channel-point redeems, with PRISM overlays (with sound). Plus a **quote system**, **timed messages**, **first-chatter & new-follower alerts**, raid/bits/sub hype via EventSub, opt-in automated outcomes, a leaderboard, and cooldowns. See **[INTERACTIVE.md](INTERACTIVE.md)**
+- **Stream Health Monitor**: watches dropped frames, **sustained bitrate vs target** (catches the quality loss Dynamic Bitrate hides), congestion, render/encode lag, **a muted or mis-bound microphone**, CPU/RAM, free disk, chat/EventSub/auth and overlay heartbeats; raises a banner + toast + beep (and optionally a chat notice) the moment something goes wrong, logs every incident to `data/health-log.jsonl`, and offers a one-click **preflight** check before you go live
+- **Chat feed for overlays**: every chat message is normalised and published on a `chat` effects channel, so an overlay can render chat with no second IRC connection and no second set of credentials. Badges, Twitch emotes, mentions, replies, cheers, `/me` and moderation (`CLEARMSG` / `CLEARCHAT`) all come through. `GET /api/chat/backfill?n=25` returns the newest messages still in the ring buffer so an overlay repopulates after an OBS refresh. PRISM's chat overlay is deployed into `static/chat/` and consumes it
+- **Real-time**: overlays get effects instantly (long-poll) and the dashboard streams live events (SSE)
+- **Spotify now-playing**: one-click connect, a `!song` command, and a dashboard widget (optional)
+- **One-click Twitch login**: a browser window opens for you to approve; no codes to copy
+- **Start, restart and shut down without a console**: Restart and Shut Down buttons on the dashboard (two clicks, no undo), a system-tray icon that owns the process, and a `prism-ctl` command a Stream Deck key can run. Restarting re-reads `config.json` and reconnects Twitch and OBS without touching the port your browser sources point at
+- **Shoutouts**: `!so @user` (and an automatic one on raids) shows a PRISM card with the streamer's avatar, last category and a recent clip, with mod controls (`!so skip|clear|on|off|ok`), a blocklist, cooldowns and an optional mod approval step for raid shoutouts. Configure it under `shoutout` in `config.json`
+- **Claude integration (optional)**: an MCP server lets Claude check OBS, Twitch, preflight and stream health, and, with your approval for each call, run shoutouts, switch the overlay theme, undo wheel effects, add quotes, and start or restart Stream Manager (never while you're live). See **[Claude (MCP server)](#claude-mcp-server)**
+- **Self-update**: checks GitHub Releases and installs from the dashboard (HTTPS-only, integrity-logged, with a backup first)
+- **Local by default & LAN-safe**: binds to `127.0.0.1`; with `--lan`, controls stay token-locked and you can require a password for remote devices
 
 ## Requirements
 
 - Python 3.9+
-- OBS Studio (this is built to run alongside OBS, primarily on Windows — OBS/system detection uses Windows-specific APIs where OBS WebSocket isn't configured)
+- OBS Studio (this is built to run alongside OBS, primarily on Windows; OBS/system detection uses Windows-specific APIs where OBS WebSocket isn't configured)
 - Optional: `pip install -r requirements.txt` for CPU/RAM monitoring (`psutil`) and real OBS status (`websocket-client`)
 
 ## Setup
@@ -42,23 +42,23 @@ A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system stat
    pip install -r requirements.txt
    ```
 
-3. **Create your `.env` file** — copy `.env.example` to `.env` and fill in:
-   - `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET` — from https://dev.twitch.tv/console/apps (register an application). Set the **OAuth Redirect URL** to `http://localhost:5000/auth/callback` so the one-click login can redirect back. (No `.env` yet? Just run the app once — it creates one from `.env.example` for you to fill in.)
-   - `OBS_WEBSOCKET_PASSWORD` (optional) — in OBS: **Tools → WebSocket Server Settings → Enable WebSocket Server → Show Connect Info**, copy the password shown
+3. **Create your `.env` file**: copy `.env.example` to `.env` and fill in:
+   - `TWITCH_CLIENT_ID` / `TWITCH_CLIENT_SECRET`: from https://dev.twitch.tv/console/apps (register an application). Set the **OAuth Redirect URL** to `http://localhost:5000/auth/callback` so the one-click login can redirect back. (No `.env` yet? Just run the app once; it creates one from `.env.example` for you to fill in.)
+   - `OBS_WEBSOCKET_PASSWORD` (optional): in OBS, **Tools → WebSocket Server Settings → Enable WebSocket Server → Show Connect Info**, copy the password shown
 
-4. **Check `config.json`** (see [Configuration](#configuration) below) — in particular `twitch_user` and `assets_dir`.
+4. **Check `config.json`** (see [Configuration](#configuration) below), in particular `twitch_user` and `assets_dir`.
 
-5. **(Optional) Set up overlay scene sets** — inside your `assets_dir`, create `overlays/modern/` and/or `overlays/retro/`, each containing the same overlay filenames (e.g. `starting-soon.html`, `be-right-back.html`, `stream-ending.html`, `tech-difficulties.html`) styled differently. Skip this if you just want a single fixed set of overlays — the app works fine without it.
+5. **(Optional) Set up overlay scene sets**: inside your `assets_dir`, create `overlays/modern/` and/or `overlays/retro/`, each containing the same overlay filenames (e.g. `starting-soon.html`, `be-right-back.html`, `stream-ending.html`, `tech-difficulties.html`) styled differently. Skip this if you just want a single fixed set of overlays; the app works fine without it.
 
 6. **Run it**
    ```
    python stream-manager.py
    ```
-   Your browser opens the dashboard automatically. If interactive features are on and you haven't logged in yet, a second tab opens on Twitch's consent screen — click **Authorize** once and you're connected (no codes to copy). Leave the terminal window running while you stream.
+   Your browser opens the dashboard automatically. If interactive features are on and you haven't logged in yet, a second tab opens on Twitch's consent screen. Click **Authorize** once and you're connected (no codes to copy). Leave the terminal window running while you stream.
 
-7. **(First run only, if using scene sets)** On the dashboard, click a scene set (e.g. **Modern Neon**) once — this copies its files into `overlays/active/`, which is what OBS actually reads.
+7. **(First run only, if using scene sets)** On the dashboard, click a scene set (e.g. **Modern Neon**) once. This copies its files into `overlays/active/`, which is what OBS actually reads.
 
-8. **Point OBS at your overlays** — add a Browser Source for each one, using the URLs shown (and click-to-copy) under **Overlay URLs** on the dashboard, e.g. `http://localhost:5000/overlays/active/starting-soon.html`. These stay the same even after switching scene sets.
+8. **Point OBS at your overlays**: add a Browser Source for each one, using the URLs shown (and click-to-copy) under **Overlay URLs** on the dashboard, e.g. `http://localhost:5000/overlays/active/starting-soon.html`. These stay the same even after switching scene sets.
 
 ## Build a standalone `.exe` (optional)
 
@@ -78,10 +78,10 @@ This produces `dist\StreamManager.exe`. Put your `config.json` and `.env` next t
 |---|---|---|
 | `port` | `5000` | Port to listen on (tries the next 19 ports if taken) |
 | `poll_interval` | `5` | Seconds between OBS/Twitch/system status polls |
-| `twitch_user` | — | Your Twitch login name |
+| `twitch_user` | - | Your Twitch login name |
 | `assets_dir` | `%USERPROFILE%\Pictures\OBS Assets` | Where overlay files (and `overlays/modern`, `overlays/retro`, `overlays/active`) live |
 | `log_file` | `server.log` | Request log file, auto-rotated at 1 MB |
-| `lan` | `false` | Bind to `0.0.0.0` instead of `127.0.0.1` — see [Security](#security) |
+| `lan` | `false` | Bind to `0.0.0.0` instead of `127.0.0.1` (see [Security](#security)) |
 
 ### `.env`
 
@@ -114,7 +114,7 @@ it, so the dashboard reports that instead of quietly shutting down.
 
 | You want to | Do this |
 |---|---|
-| Start it | `Start Stream Manager.bat` — it relaunches itself on request |
+| Start it | `Start Stream Manager.bat` (it relaunches itself on request) |
 | Start it with a tray icon | `Stream Manager (Tray).bat` (needs `pip install pystray pillow`) |
 | Restart mid-stream | Dashboard → Overview → **Restart**, the tray menu, or `prism-ctl restart` |
 | Shut it down | Dashboard → **Shut Down**, the tray menu, or `prism-ctl stop` |
@@ -124,7 +124,7 @@ it, so the dashboard reports that instead of quietly shutting down.
 prism-ctl.bat status | start | restart | stop
 ```
 
-`prism-ctl` reads `data/runtime.json` — the port and this run's session token,
+`prism-ctl` reads `data/runtime.json`: the port and this run's session token,
 written when the app starts and removed when it stops. That file never leaves
 your disk and `data/` is gitignored; a Stream Deck key needs no credential of
 its own and nothing is added to `.env`.
@@ -226,11 +226,11 @@ How it stays safe:
 
 ## Security
 
-By default the server only listens on `127.0.0.1` — nothing else on your network can reach the dashboard or its API. Pass `--lan` (or set `"lan": true` in `config.json`) if you want to check the dashboard from your phone or another device on the same network; the startup banner always states plainly which mode is active.
+By default the server only listens on `127.0.0.1`, so nothing else on your network can reach the dashboard or its API. Pass `--lan` (or set `"lan": true` in `config.json`) if you want to check the dashboard from your phone or another device on the same network; the startup banner always states plainly which mode is active.
 
 Two things guard it. Every state-changing endpoint requires a session token that is generated fresh each run and compared in constant time, so a web page you happen to visit cannot POST to the dashboard. And in `--lan` mode, setting `SM_DASHBOARD_PASSWORD` requires HTTP Basic auth from any non-localhost client; localhost (OBS on the same PC) is always exempt.
 
-Restart and shutdown get a third gate: the request must come from `127.0.0.1`, whatever the token says. Note that in `--lan` mode *without* `SM_DASHBOARD_PASSWORD`, anyone who can load `/dashboard` can read the session token out of the page — so for every other protected endpoint the token is not doing much there, and the password is what matters. The loopback gate is why restart and shutdown are unaffected either way.
+Restart and shutdown get a third gate: the request must come from `127.0.0.1`, whatever the token says. Note that in `--lan` mode *without* `SM_DASHBOARD_PASSWORD`, anyone who can load `/dashboard` can read the session token out of the page. So for every other protected endpoint the token is not doing much there, and the password is what matters. The loopback gate is why restart and shutdown are unaffected either way.
 
 That is enough to keep a stray browser tab or a curious housemate out. It is not hardening for a hostile network: there is no TLS, and without `SM_DASHBOARD_PASSWORD` the `--lan` dashboard is readable by anyone who can reach the port. Only enable `--lan` on networks you trust.
 

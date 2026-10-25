@@ -327,7 +327,7 @@ Rewards** list until it's ticked off. See `INTERACTIVE.md` for the full table.
 - **Timed effects** (`timed.py`) snapshot the state they change to disk
   *before* changing it and restore that exact snapshot on their timer, at
   shutdown, or at the next start after a crash. A second hit extends the
-  timer instead of stacking — a stacked flip would snapshot the already-flipped
+  timer instead of stacking; a stacked flip would snapshot the already-flipped
   state and stay upside down forever. **Undo all effects** on the new Wheel tab.
 - **OBS writer** (`obs_control.py`) is a separate module from the read-only
   `obs_ws.py` and can only touch the one allowlisted source and its own filter.
@@ -342,7 +342,7 @@ Rewards** list until it's ticked off. See `INTERACTIVE.md` for the full table.
   `timeout:N` actions from a real channel-point spin had no target and silently
   did nothing. Only the mod `!lucky` command path ever worked.
 - **New config sections were thrown away on save.** `config.json` keys not in
-  `CONFIG_DEFAULTS` are deleted on load and never written — the new `outcomes`,
+  `CONFIG_DEFAULTS` are deleted on load and never written. The new `outcomes`,
   `obs_effects`, `steam`, `featured` and `chat` sections are registered.
 
 ### Chat (PRISM 2.4.0 overlay)
@@ -419,13 +419,13 @@ Most of the work was not the buttons.
 
 ### The buttons
 
-Overview tab, bottom card. Two clicks each — the first arms, the second fires,
+Overview tab, bottom card. Two clicks each: the first arms, the second fires,
 and the armed state expires after five seconds. There is no undo: the second
 click stops the thing currently running your stream.
 
 Restarting re-reads `config.json` and reconnects Twitch and OBS. The page keeps
 a banner up explaining the gap instead of reporting "connection lost", and
-reloads itself when the new process answers — which it has to, because the
+reloads itself when the new process answers, which it has to, because the
 session token is regenerated on every start and the old page's token dies with
 the old process.
 
@@ -448,8 +448,8 @@ any local process. Point a Stream Deck **System → Open** key at it with the
 argument `restart`.
 
 A Stream Deck key cannot hold a per-run session token, so `prism-ctl` reads
-`data/runtime.json` — port, pid and token, written at startup and removed at
-shutdown. That is not a new standing credential: the token's job is to stop a
+`data/runtime.json` (port, pid and token, written at startup and removed at
+shutdown). That is not a new standing credential: the token's job is to stop a
 cross-site page or another device on the LAN from driving the dashboard, and
 neither can read a file on this disk. `data/` is gitignored, nothing goes into
 `.env`, and the file is written through a temp file and renamed so a half-write
@@ -460,7 +460,7 @@ can never be read as "not running".
 `Start Stream Manager.bat` is now a loop: it sets `SM_SUPERVISED=1`, runs the
 app, and relaunches on exit code 42. Any other code stops, so a crash at startup
 breaks the loop instead of spinning. Note the `.bat` files ship with CRLF line
-endings deliberately — `cmd.exe` mis-handles `goto` in an LF-only batch file.
+endings deliberately: `cmd.exe` mis-handles `goto` in an LF-only batch file.
 
 ### The part that was not the buttons
 
@@ -468,12 +468,12 @@ endings deliberately — `cmd.exe` mis-handles `goto` in an LF-only batch file.
 test-bound a bare socket before binding the real server. A bare socket has no
 `SO_REUSEADDR`; `_Server` sets it. So the probe was strictly stricter than the
 thing it was guarding, and it reported the port taken for any entry sitting in
-`TIME_WAIT` — which there always is after an exit, because the dashboard's SSE
+`TIME_WAIT`, which there always is after an exit, because the dashboard's SSE
 stream and every OBS browser source's long poll are connections the server
 closes first. `TIME_WAIT` is a minute on Linux and up to four on Windows. Every
 restart would have walked to 5001, then 5002, and every overlay pinned to 5000
 would have gone blank mid-stream. The probe is gone; the real server binds
-directly. This bug predates the release — restart is just what would have made
+directly. This bug predates the release; restart is just what would have made
 it happen weekly instead of never.
 
 **The shutdown path now stops the background loops before saving.** Chat,
@@ -481,7 +481,7 @@ redeems, EventSub and timers are daemon threads that mutate exactly the state
 being written, and they used to keep running through all three saves. A
 `!coinflip` landing in that window was recorded into a file that had already
 been written, then thrown away. They are stopped first now, each save is
-guarded separately, and the whole teardown runs in a `finally` — previously
+guarded separately, and the whole teardown runs in a `finally`. Previously
 only `KeyboardInterrupt` was caught, so any other exception left the port bound
 and `runtime.json` stale.
 
@@ -492,7 +492,7 @@ anti-spam state at all.
 
 **The tray retries the graceful stop instead of reaching for `terminate()`.**
 `live_instance()` answers "not running" for a child that is alive but not yet
-serving, and startup is several seconds of OBS and Twitch calls — longer on a
+serving, and startup is several seconds of OBS and Twitch calls, longer on a
 first-run device login. Deciding from one failed probe meant hard-killing a
 healthy process and losing the state this whole feature exists to protect.
 
@@ -502,12 +502,12 @@ the log write rather than before it.
 
 ### Tests
 
-`tests/test_lifecycle.py` — 36 cases covering the action flag, the runtime file,
+`tests/test_lifecycle.py`: 36 cases covering the action flag, the runtime file,
 endpoint auth, the teardown order, the atomic writes, the tray's quit path and
 port reacquisition. `tests/dashboard_layout.mjs` grew to 28 browser checks.
 
 Every fix was mutation-tested: revert it, and its test must fail. Two of the
-tests failed that check on the first attempt and were rewritten — the port test
+tests failed that check on the first attempt and were rewritten. The port test
 originally used a squatter that never accepted a connection, so it left no
 `TIME_WAIT` and passed happily against the broken code.
 
@@ -517,7 +517,7 @@ and the tray's hard kill. All three are fixed here.
 ### Known limits
 
 CI runs on Ubuntu. Stream Manager ships on Windows, and several of the fixes
-above behave differently there — `TcpTimedWaitDelay` is longer, `terminate()`
+above behave differently there: `TcpTimedWaitDelay` is longer, `terminate()`
 is `TerminateProcess` with no cleanup at all, and `os.chmod(0o600)` on
 `runtime.json` does nothing because Windows uses the folder's ACL instead. On a
 drive-root install another local account could read that file; it holds a
@@ -530,12 +530,12 @@ breaking. Nothing here touches the overlays, the chat feed or the IRC client.
 
 ### The banner rendered as a full-height column
 
-`<body>` is `display: flex` — a row — and `#health-banner` is a direct child of
+`<body>` is `display: flex` (a row), and `#health-banner` is a direct child of
 it. The moment it became visible it turned into a flex **item**: a 344px-wide,
 full-height column painted beside the sidebar, shoving the sidebar from `x=22`
 to `x=388`. `position: sticky` never took it out of that row.
 
-Its own CSS always described something else — `text-align: center`, and
+Its own CSS always described something else: `text-align: center`, and
 `border-radius: 0 0 12px 12px`, which only makes sense on a bar hanging off the
 top edge. `position: fixed` is what it meant.
 
@@ -544,7 +544,7 @@ solely when the connection drops. Fixing one and not the other would have put
 the same defect back the next time your connection blipped.
 
 This mattered more than it first looked: the banner appears on **any** alert,
-including a real one mid-stream — precisely when the dashboard needs to be
+including a real one mid-stream, precisely when the dashboard needs to be
 readable.
 
 ### Opening the dashboard toasted every live alert
@@ -553,15 +553,15 @@ readable.
 everything currently raised as newly raised: a toast each, and a beep for each
 `bad` one. That fired on every page load and every refresh, not just at boot.
 
-The first sample is now the baseline. An alert raised *after* it still toasts —
-the tests check both halves.
+The first sample is now the baseline. An alert raised *after* it still toasts,
+and the tests check both halves.
 
 ### A normal launch reported itself as two failures
 
 At `t=0` the Twitch token has not loaded and the IRC client has not finished
 CAP + JOIN, so a sample taken immediately found both down. `_update_alerts`
 raises on `bad` alone, so that turned an ordinary startup into two raised
-alerts — a log entry, a banner, a toast, a beep, and optionally a chat notice —
+alerts (a log entry, a banner, a toast, a beep, and optionally a chat notice)
 **every single launch**. Which is how you learn to ignore the banner on the
 launch that matters.
 
@@ -571,7 +571,7 @@ before, so a genuinely broken auth is still raised.
 
 ### The version chip was hardcoded
 
-`dashboard.html` carried `v0.10.6` as literal text — two releases stale, on the
+`dashboard.html` carried `v0.10.6` as literal text, two releases stale, on the
 one element whose entire job is telling you what is running. It now reads
 `state.server.version`, which rides along on `/api/status`. The dashboard
 already polls that every 2 seconds, so this costs no extra request.
@@ -583,7 +583,7 @@ only visible during an alert shipped broken.
 
 `tests/dashboard_layout.mjs` drives the real dashboard in a real browser against
 a stub server and measures the banner. The load-bearing assertion is that
-showing it does not move the sidebar — the bug stated as a number rather than as
+showing it does not move the sidebar: the bug stated as a number rather than as
 a screenshot. 12 checks, and a second CI job runs them; the script skips cleanly
 when playwright is absent.
 
@@ -607,8 +607,8 @@ Documentation only. No behaviour change, no new code, no migration.
 ### The chat feed was undocumented
 
 v0.11.0 and v0.11.1 were entirely about the chat feed, and the README never
-mentioned it. The Features list covers every other subsystem in detail — the
-health monitor gets a paragraph — while the `chat` effects channel,
+mentioned it. The Features list covers every other subsystem in detail (the
+health monitor gets a paragraph), while the `chat` effects channel,
 `GET /api/chat/backfill` and `static/chat/` went undescribed. Reading the repo,
 you could not tell the feature existed.
 
@@ -631,7 +631,7 @@ still works.
 The section now says what guards the server **and** what does not: there is no
 TLS, and an unpassworded `--lan` dashboard is readable by anyone who can reach
 the port. Overstating the danger is the less harmful error, but it is still an
-error — someone who believes the docs either avoids a safe feature or distrusts
+error. Someone who believes the docs either avoids a safe feature or distrusts
 the accurate parts.
 
 ### The updater reads Releases, not tags
@@ -641,8 +641,8 @@ this project real updates. Tags reached v0.11.1 while the newest published
 GitHub **Release** was v0.8.0, so every version since has been invisible to the
 in-app updater and no dashboard has offered one.
 
-It fails safe — `_parse_version` does a proper tuple comparison, so an older
-"latest" never triggers a downgrade — but the feature advertised in the README
+It fails safe (`_parse_version` does a proper tuple comparison, so an older
+"latest" never triggers a downgrade), but the feature advertised in the README
 has not worked for five releases. Publishing a Release for each tag from here on
 is what fixes it; nothing in the code needed to change.
 
@@ -666,7 +666,7 @@ fresh = _badge_cache["ok"] and (now - _badge_cache["at"]) < _BADGE_TTL
 ```
 
 After a failed Helix read `ok` stays `False`, so the result was never considered
-fresh and the **next message tried again** — up to two 6-second HTTPS requests,
+fresh and the **next message tried again**: up to two 6-second HTTPS requests,
 on the one thread that answers Twitch's `PING` and dispatches every `!command`.
 Setting `at` on failure did nothing, because `ok` gated it. A sustained Helix
 outage would have stalled chat, frozen commands, and eventually dropped the IRC
@@ -678,13 +678,13 @@ Three changes:
   current (possibly empty) map at once and a background thread refreshes it. The
   first messages of a session may render without badge images; that is strictly
   better than an unread socket.
-- **Staleness is judged on `at` alone**, so a failure backs off — 60s before the
+- **Staleness is judged on `at` alone**, so a failure backs off: 60s before the
   first success, the full hour after one (the map already held is still correct,
   so there is nothing to hurry for).
 - **The map is replaced, never mutated in place.** `_badges()` iterates the
   object it was handed without holding the lock, so the old dict must stay
   intact. One refresh runs at a time, and the in-flight flag is cleared on every
-  exit path — including `BaseException` and a failure to start the thread.
+  exit path, including `BaseException` and a failure to start the thread.
   Latching it would freeze badges for the rest of the session.
 
 `chat.py` calls `chatfeed.warm()` right after the JOIN, which kicks the same
@@ -693,7 +693,7 @@ off-thread refresh so the map is usually ready before the first message.
 #### An out-of-range emote span ate the rest of the message
 
 `fragments()` clamped a span that ran past the end of the text, which left the
-cursor past the end — so the trailing text silently vanished. Spans that do not
+cursor past the end, so the trailing text silently vanished. Spans that do not
 land wholly inside the message are dropped instead.
 
 #### `?backfill=25` restored fewer than 25 messages
@@ -715,7 +715,7 @@ the guard exists to prevent. A test drives that path.
 `MIME_MAP` gained `woff2`, `woff`, `ttf`, `otf`, plus `gif`, `webp`, `ico`, and
 the common audio/video types. Webfonts happened to load as
 `application/octet-stream` in CEF, but that is the browser being lenient, not a
-contract — and one `nosniff` header away from breaking.
+contract, and one `nosniff` header away from breaking.
 
 ### Added
 
@@ -728,7 +728,7 @@ nothing new is negotiated.
 
 The line dispatch came out of the read loop into **`chat.dispatch()`** so the
 param shapes can be tested directly. A whole-room clear has one param, a
-per-user timeout has two, and reading one as the other wipes the overlay — the
+per-user timeout has two, and reading one as the other wipes the overlay. The
 first version of that test re-implemented the indexing inside itself and stayed
 green through exactly that mistake.
 
@@ -749,7 +749,7 @@ message rather than guessing: an emote code is always a whole space-delimited
 word, so the origin whose spans land on whole words wins, with a loose fallback
 so strictness can never do worse than trusting one reading. Without the word
 boundary test, shifting a body-relative span by 8 lands inside the preceding word
-whenever that word is 7+ characters — `absolutely Kappa` rendered the emote image
+whenever that word is 7+ characters: `absolutely Kappa` rendered the emote image
 over the middle of `absolutely`.
 
 ### Tests
@@ -761,7 +761,7 @@ Two of the first drafts were worthless and were rewritten:
 
 - A "never blocks the IRC thread" test asserted on elapsed effect, and passed
   happily against a blocking implementation that merely took 10 seconds. It now
-  asserts on the mechanism — a blocking version constructs no `Thread` at all.
+  asserts on the mechanism: a blocking version constructs no `Thread` at all.
 - The CLEARCHAT routing test copied `chat.py`'s param expression into itself. It
   now calls `chat.dispatch()`.
 
@@ -806,7 +806,7 @@ message must never take the IRC client down with it.
 
 **`GET /api/chat/backfill?n=25`** returns the newest N messages still in the
 ring buffer, oldest first, plus `last_id`. The shared `/api/effects` first poll
-deliberately returns no backlog — replaying it once fired an entire session of
+deliberately returns no backlog; replaying it once fired an entire session of
 shoutouts on a single scene switch (see v0.10.6). Chat wants the opposite after
 an OBS browser-source refresh, so it gets its own read rather than changing
 behaviour every other overlay depends on.
@@ -822,7 +822,7 @@ feed.
 `emotes` tag are code-point offsets. Python indexes `str` by code point, so the
 split is correct by construction. JavaScript indexes by UTF-16 unit, so a
 browser doing the same split would land one position early after any astral
-character — which is most emoji — and render every later emote over the wrong
+character (which is most emoji) and render every later emote over the wrong
 text. Doing it here makes that bug structurally impossible instead of something
 to remember.
 
@@ -840,7 +840,7 @@ message arriving and it reaching the bus.
 
 ### Tests
 
-20 new tests in `tests/test_chatfeed.py` — recorded IRC lines in, message
+20 new tests in `tests/test_chatfeed.py`: recorded IRC lines in, message
 objects out, no network and no live Twitch. They cover plain messages, multiple
 and repeated emotes, the emoji-before-emote offset case, out-of-range spans,
 emote-only messages, mention detection and the self-mention flag, cheers, replies
@@ -862,7 +862,7 @@ visible" is on for all of them), so **switching away to Be Right Back / Starting
 Soon / Tech Difficulties and back fired every shoutout, hype alert, wheel spin,
 slots roll and coinflip of the session, back to back.**
 
-A first poll now returns `{"events": [], "last_id": <head>}` — the overlay
+A first poll now returns `{"events": [], "last_id": <head>}`, so the overlay
 starts caught up instead of starting behind. `effects.head()` already existed
 for exactly this and had never been wired up. A consumer that already has an id
 still gets everything it missed; only a fresh page load skips the backlog, which
@@ -875,7 +875,7 @@ real request handler and fails against the old code.
 
 Ported from PRISM 1.7.1 into `static/interactive/shoutout.html`. A `<video>`
 that stalls mid-playback fires neither `error` nor `ended`, so a frozen frame
-sat there until the hold timer expired — and a clip that never started at all
+sat there until the hold timer expired, and a clip that never started at all
 held the card for its full duration showing nothing.
 
 The overlay now watches actual playback progress: if a clip hasn't started
@@ -892,8 +892,8 @@ Both overlays pass the same 32 checks.
 
 #### A shoutout with no overlay listening vanished silently
 
-If no overlay is polling the `shoutout` channel — a scene that carries none, or
-one whose browser source is shut down — the card had nowhere to go, but the
+If no overlay is polling the `shoutout` channel (a scene that carries none, or
+one whose browser source is shut down), the card had nowhere to go, but the
 screen time and repeat guard were still spent, so a retry was refused too. The
 service now says so on the console. (Behaviour is unchanged; this is diagnosis,
 not a fix.)
@@ -921,7 +921,7 @@ dashboard, and exits:
 ```
 
 The probe distinguishes "another Stream Manager" from "some unrelated program has
-this port" — only the former short-circuits startup, so the port-walking fallback
+this port"; only the former short-circuits startup, so the port-walking fallback
 still works as designed. `--allow-multiple` opts out.
 
 Covered by two tests that stand up real HTTP servers: one answering `/api/ping`
@@ -934,7 +934,7 @@ ignored).
 
 `set_clip_playing()` is status only. Its old docstring called it a "hook point
 for audio ducking", which is an invitation to rebuild something that was
-deliberately dropped — see the long note above it in `stream_manager/shoutout.py`
+deliberately dropped. See the long note above it in `stream_manager/shoutout.py`
 for the reasoning and, if it's ever revisited, the failure mode to design for
 (a failed *restore*, not a failed duck).
 
@@ -942,7 +942,7 @@ for the reasoning and, if it's ever revisited, the failure mode to design for
 
 - `Stream Ending` and `iPhone` carried only the old hosted GitHub Pages overlay,
   which talks to a WebSocket service that no longer runs. **Neither scene could
-  show a shoutout at all** — including raids landing on Stream Ending, which is
+  show a shoutout at all**, including raids landing on Stream Ending, which is
   when most of them land. Both now carry the `Interactive Shoutout` source.
 - `StreamFox 98 - Game` had the hosted overlay *and* the working one via the
   nested Base scene. The hosted one is hidden there now.
@@ -967,7 +967,7 @@ rather than rewritten; this release is what describes its contents.
 
 Found by reading `server.log` from the 2026-09-02 stream end to end rather than
 grepping it for the word "error". There were no errors. There were eight torn
-lines — entries consisting of a single `l` and a stray carriage return — where
+lines (entries consisting of a single `l` and a stray carriage return) where
 two threads' writes had collided mid-line.
 
 ### Fixed
@@ -977,7 +977,7 @@ two threads' writes had collided mid-line.
 from every handler thread of a `ThreadingHTTPServer`. During a stream, overlay
 polling, the dashboard, SSE and the health monitor all write concurrently. On
 Windows the text layer translates `\n` into `\r\n` as a *separate* write, so a
-collision leaves a fragment plus a bare carriage return — exactly the damage in
+collision leaves a fragment plus a bare carriage return, exactly the damage in
 the log.
 
 Every writer now goes through `logging_util.append_line`, which holds a lock for
@@ -988,7 +988,7 @@ can't split a line in two. The same unlocked pattern was in `health._log`
 
 #### Log rotation only happened at startup
 The 1 MB ceiling was checked once, at launch. Leaving Stream Manager running
-across several streams grew `server.log` without bound — roughly 75 KB per
+across several streams grew `server.log` without bound: roughly 75 KB per
 two-hour stream, so about a day of streaming to reach the ceiling that was never
 enforced. Rotation is now checked on every append, and `.old` is removed first so
 the rename can't fail on Windows.
@@ -1000,7 +1000,7 @@ actually catch the bug:
 
 - **Rotation** fails without runtime rotation.
 - **Concurrency** needed care. Racing 16 threads passes against the buggy code on
-  Linux, because `O_APPEND` plus the GIL makes small writes atomic by accident —
+  Linux, because `O_APPEND` plus the GIL makes small writes atomic by accident;
   the tearing is a Windows text-mode artifact. The test now forces the same
   window on any platform by splitting each write in two with a yield between.
   Against the old implementation it produces 277 torn lines; against the fix,
@@ -1016,14 +1016,14 @@ This release closes that gap and fixes the bugs found auditing why.
 
 Dynamic Bitrate (enabled after the September 1 investigation) does its job: when
 the uplink collapses it lowers the bitrate instead of dropping frames. The
-September 2 log confirms it worked —
+September 2 log confirms it worked:
 
 ```
 Number of lagged frames due to rendering lag/stalls: 40 (0.0%)
 (no "dropped frames due to insufficient bandwidth" line at all)
 ```
 
-— while the same log shows the stream running at **50 kbps** against a 6000 kbps
+Meanwhile the same log shows the stream running at **50 kbps** against a 6000 kbps
 target. Zero dropped frames, unwatchable picture. Every check the monitor had was
 keyed on drops, so it saw nothing.
 
@@ -1038,12 +1038,12 @@ inflate the learned target. There is a short grace period after going live so
 the normal ramp-up doesn't cry wolf.
 
 #### Microphone and audio checks
-- **Muted mic while live** is a `bad` alert — the banner, toast and beep fire
+- **Muted mic while live** is a `bad` alert: the banner, toast and beep fire
   within seconds instead of a viewer telling you twenty minutes in.
 - **Mic bound to the Windows default device** is flagged. The September 2 log
   shows `Mic/Aux` following the default and switching between a HyperX Quadcast,
-  an Oculus virtual device and an Insta360 receiver as headsets came and went —
-  each switch re-initialises the source, which viewers hear as a dropout.
+  an Oculus virtual device and an Insta360 receiver as headsets came and went,
+  and each switch re-initialises the source, which viewers hear as a dropout.
 - **Mid-stream device changes** and other muted audio sources are reported.
 
 Set which input to watch with `health.mic_input` (default `Mic/Aux`), or turn the
@@ -1055,10 +1055,10 @@ reachable". It now says which failure it was and what to do:
 
 | Failure | What you now see |
 |---|---|
-| Timeout | `no response from <host> — if OBS is on this PC set OBS_WEBSOCKET_HOST=127.0.0.1 in .env (a stale LAN IP times out like this)` |
-| Refused | `connection refused — OBS is not running, or its WebSocket server is off (OBS → Tools → WebSocket Server Settings → Enable)` |
-| Bad password | `OBS rejected the password — copy it from Show Connect Info` |
-| Bad hostname | `cannot resolve host '<host>' — check OBS_WEBSOCKET_HOST in .env` |
+| Timeout | `no response from <host>; if OBS is on this PC set OBS_WEBSOCKET_HOST=127.0.0.1 in .env (a stale LAN IP times out like this)` |
+| Refused | `connection refused; OBS is not running, or its WebSocket server is off (OBS → Tools → WebSocket Server Settings → Enable)` |
+| Bad password | `OBS rejected the password; copy it from Show Connect Info` |
+| Bad hostname | `cannot resolve host '<host>'; check OBS_WEBSOCKET_HOST in .env` |
 
 This is what the timeout case was: `OBS_WEBSOCKET_HOST` was pinned to a LAN IP
 that the router had long since reassigned.
@@ -1075,7 +1075,7 @@ each offline↔live transition, which resets per-stream state and logs
   every viewer was already "greeted". Now cleared on going live.
 - **`cooldowns.json` grew forever.** `_last_user` and `_last_notify` gained a
   permanent entry per (action, viewer) and `save()` wrote all of them. Entries
-  older than an hour — long dead, since cooldowns are seconds to minutes — are
+  older than an hour (long dead, since cooldowns are seconds to minutes) are
   now pruned on use, save and load.
 - **`spin-history.json` grew forever** for the same reason; entries older than a
   week are dropped.
@@ -1096,7 +1096,7 @@ each offline↔live transition, which resets per-stream state and logs
 ### Tests
 
 50 total (6 new), including a synthetic OBS feed that reproduces the exact
-September 2 failure — bitrate collapsing while dropped frames stay at 0.0% — and
+September 2 failure (bitrate collapsing while dropped frames stay at 0.0%) and
 asserts the new check catches what the old ones missed.
 
 ## v0.9.0: Stream Health Monitor
@@ -1104,7 +1104,7 @@ asserts the new check catches what the old ones missed.
 Last month a stream went out with ~30% dropped frames and nobody knew until
 viewers said so in chat. This release makes that impossible to miss: Stream
 Manager now watches the numbers that actually predict a bad stream and tells you
-the moment they move — while you can still do something about it.
+the moment they move, while you can still do something about it.
 
 ### Added
 
@@ -1116,7 +1116,7 @@ seconds and turns them into named checks, each `ok` / `warn` / `bad`.
 
 | Check | Source | Why it matters |
 |---|---|---|
-| Dropped frames (network) | `GetStreamStatus.outputSkippedFrames` | Upload can't keep up — the classic "you're lagging" |
+| Dropped frames (network) | `GetStreamStatus.outputSkippedFrames` | Upload can't keep up; the classic "you're lagging" |
 | Network congestion | `GetStreamStatus.outputCongestion` | Early warning before drops start |
 | Stream reconnecting | `GetStreamStatus.outputReconnecting` | You're off-air right now |
 | Rendering lag (GPU) | `GetStats.renderSkippedFrames` | GPU can't compose the scene |
@@ -1128,22 +1128,22 @@ seconds and turns them into named checks, each `ok` / `warn` / `bad`.
 | Overlay heartbeats | effects long-poll | A browser source that quietly died |
 
 Frame rates are measured **per poll interval**, not cumulatively, so a rough
-patch at the start of a stream doesn't mask a healthy hour later — and, more
+patch at the start of a stream doesn't mask a healthy hour later, and, more
 importantly, a healthy first hour doesn't hide trouble that starts now.
 
-**Alerting** — a check going `bad` raises an alert with hysteresis (it clears
+**Alerting**: a check going `bad` raises an alert with hysteresis (it clears
 only after several consecutive healthy samples, so a single blip doesn't
 flap). Every raise and clear is appended to `data/health-log.jsonl` for
 post-stream review, and printed to the console.
 
 #### Dashboard: Health tab
-- **Critical banner** across the top of the dashboard whenever anything is bad —
+- **Critical banner** across the top of the dashboard whenever anything is bad,
   visible from every tab.
 - **Toast + a short beep** the moment an alert is raised (mutable, and rate-limited
   to one beep per 20s), plus a "Recovered" toast when it clears.
 - **Live metric tiles** colour-coded by severity, and a full list of checks with
   plain-language messages.
-- **Preflight** — one click answers "am I ready to go live?" It runs every check
+- **Preflight**: one click answers "am I ready to go live?" It runs every check
   that makes sense while offline (auth, chat, EventSub, OBS, overlays, disk,
   CPU/RAM), skips the live-only ones, and treats **OBS not running** as a hard
   blocker rather than a warning.
@@ -1151,11 +1151,11 @@ post-stream review, and printed to the console.
 #### Optional chat alerts
 Off by default, since they're viewer-visible. Turn on `health.chat_alert` to
 have the bot post a notice (templated, with a cooldown) when the stream goes
-bad — useful if you have mods watching chat but not your second monitor.
+bad. Useful if you have mods watching chat but not your second monitor.
 
 ### Configuration
 
-New `health` section in `config.json` — every threshold is editable, and the
+New `health` section in `config.json`. Every threshold is editable, and the
 Config tab validates it. Defaults:
 
 ```json
@@ -1174,12 +1174,12 @@ Config tab validates it. Defaults:
 
 ### API
 
-- `GET /api/health/monitor` — current snapshot: checks, metrics, active alerts.
-- `GET /api/health/preflight` — one-shot readiness report.
+- `GET /api/health/monitor` returns the current snapshot: checks, metrics, active alerts.
+- `GET /api/health/preflight` returns a one-shot readiness report.
 
 ### Also in this release
 
-- `obs_ws.fetch_stats()` — `GetStats` + `GetStreamStatus` over a single
+- `obs_ws.fetch_stats()`: `GetStats` + `GetStreamStatus` over a single
   connection, so the monitor costs one round-trip per poll.
 - Overlay heartbeat tracking in `effects` (`note_poll` / `subscribers` /
   `last_poll`), which is what makes "your browser source is dead" detectable.
@@ -1194,7 +1194,7 @@ Config tab validates it. Defaults:
 The standalone **PRISM Shoutout** service is now part of Stream Manager. That
 retires a second Python process, a second Twitch chat connection, a second
 obs-websocket client, a second overlay transport, a duplicated copy of the
-Twitch credentials, and an 18 MB virtualenv — one app, one console, one config.
+Twitch credentials, and an 18 MB virtualenv. Now it's one app, one console, one config.
 
 ### Added
 
@@ -1204,7 +1204,7 @@ Twitch credentials, and an 18 MB virtualenv — one app, one console, one config
 - **Automatic raid shoutouts** via EventSub, with a viewer floor, an optional
   allowlist, and an optional "hold until a mod says `!so ok`" approval flow.
 - **Mod controls:** `!so skip · clear · off · on · ok · status`.
-- **Clip selection, ported intact** — newest clip from the last 7 days (random
+- **Clip selection, ported intact**: newest clip from the last 7 days (random
   among the newest 8), falling back to a random pick from the most-viewed of the
   last 30 days, skipping the last few clips shown for that streamer so repeat
   shoutouts rotate. Rotation survives restarts via `data/shoutout-log.jsonl`.
@@ -1216,7 +1216,7 @@ Twitch credentials, and an 18 MB virtualenv — one app, one console, one config
 - **Chat templates** for normal / raid / live / not-found.
 
 #### Overlay
-- `static/interactive/shoutout.html` — the PRISM card, re-pointed from its old
+- `static/interactive/shoutout.html`: the PRISM card, re-pointed from its old
   WebSocket service to Stream Manager's effects transport (long-poll, same as
   the other overlays). Reports clip start/stop back to
   `POST /api/shoutout/clip` (the hook for OBS audio ducking).
@@ -1232,7 +1232,7 @@ Twitch credentials, and an 18 MB virtualenv — one app, one console, one config
 - `twitch.py` gained `invalidate_token()` so Helix calls can retry once on 401.
 
 ### Notes
-- Uses the Twitch token Stream Manager already holds — no extra credentials.
+- Uses the Twitch token Stream Manager already holds, so no extra credentials.
 - The PRISM **web assets** (scenes, widgets, fonts, branding) are unchanged and
   still served from your OBS assets folder; only the service is retired.
 - Not yet ported: OBS **audio ducking** while a clip plays. The overlay already
@@ -1252,7 +1252,7 @@ A small patch on top of v0.7.0.
   during a stream.
 
 ### Notes
-- No functional or configuration changes — overlays, the dashboard, chat,
+- No functional or configuration changes. Overlays, the dashboard, chat,
   redeems, alerts and Spotify all behave exactly as in v0.7.0.
 - This is the change that was already on `main` but landed after the v0.7.0 tag
   was cut; v0.7.1 makes the published release match `main`.
@@ -1270,16 +1270,16 @@ Still standard-library by default; no build step for the app itself.
 - **Tabbed control center**: Overview · Interactive · Commands · Timers ·
   Quotes · Config · Log, with a connection banner, toast notifications, a
   system-health strip, and remembered last tab.
-- **Command Manager** — toggle any built-in command on/off (hand `!coinflip`
+- **Command Manager**: toggle any built-in command on/off (hand `!coinflip`
   etc. to another bot) and add/edit/delete **custom commands** (`!name →
   response`, with `{user}` / `{args}` / `{1}` variables and everyone/mods
   permission).
-- **Visual config editor** — edit command prefix, cooldowns, redeems
+- **Visual config editor**: edit command prefix, cooldowns, redeems
   (cost/enabled/prompt), automation, EventSub, viewer alerts, and wheels
   (JSON), saved to `config.json` and applied live with friendly validation.
-- **Quotes tab** and **Timers tab** — manage the quote book and timed chat
+- **Quotes tab** and **Timers tab**: manage the quote book and timed chat
   messages from the UI.
-- **Live overlay preview** — embedded, auto-scaled view of your real overlays.
+- **Live overlay preview**: embedded, auto-scaled view of your real overlays.
 
 #### Real-time
 - Overlays now receive effects via **long-polling** (near-instant, fewer
@@ -1318,7 +1318,7 @@ Still standard-library by default; no build step for the app itself.
 
 ### Notes
 - New-follower alerts need EventSub connected (`websocket-client`) and the
-  `moderator:read:followers` scope — you may be asked to re-login once.
+  `moderator:read:followers` scope; you may be asked to re-login once.
 - Spotify is optional; add `SPOTIFY_CLIENT_ID` and register
   `http://localhost:5000/auth/spotify/callback` to enable it.
 
@@ -1334,7 +1334,7 @@ default.
 #### One-click Twitch login
 - Switched from the copy-a-code **Device Code** flow to the **Authorization
   Code** flow with a local `/auth/callback` redirect. On first run a browser
-  window opens straight to Twitch's consent screen — click **Authorize** once
+  window opens straight to Twitch's consent screen. Click **Authorize** once
   and you're connected. Nothing to copy or paste.
 - Works with **either** app type: client secret present → standard secret
   exchange; no secret → **PKCE** automatically.
@@ -1346,12 +1346,12 @@ default.
   update install, config reload, authorize, logout, quotes). The dashboard
   sends a per-run `X-SM-Token`; other sites (CSRF) and other LAN devices can't
   read it, so they can't drive these actions.
-- **XSS fixed** — all dynamic text on the dashboard (usernames, overlay labels,
+- **XSS fixed**: all dynamic text on the dashboard (usernames, overlay labels,
   log lines, leaderboard) is HTML-escaped before rendering.
-- **Path-traversal guard rewritten** — file serving now resolves symlinks/`..`
+- **Path-traversal guard rewritten**: file serving now resolves symlinks/`..`
   and confirms the result is genuinely inside the overlay/static root (closes
   the old sibling-prefix edge case; URL-decodes first).
-- **Wildcard CORS removed** — the JSON API no longer sends
+- **Wildcard CORS removed**: the JSON API no longer sends
   `Access-Control-Allow-Origin: *`, so other websites can't read its responses.
 
 #### Quality of life
@@ -1371,7 +1371,7 @@ default.
 ### Notes
 - **Register the redirect URL once:** add `http://localhost:5000/auth/callback`
   to your Twitch app's **OAuth Redirect URLs** (the banner shows the exact URL
-  if a different port is used). Existing cached tokens keep working — you only
+  if a different port is used). Existing cached tokens keep working; you only
   re-login if you sign out or change scopes.
 - No changes to games, wheels, redeems, or overlays; your `config.json`,
   quotes, and stats are untouched.
@@ -1386,9 +1386,9 @@ All standard-library by default; `websocket-client` is an optional upgrade.
 
 #### Games & redeems
 - **Coin flip**, **50/50**, **slot machine**, **dice**, **magic 8-ball**, and a
-  viewer **duel** — via chat commands and/or Twitch channel-point redeems.
-- **Lucky Wheel** and **Risky Wheel** — weighted, PRISM-styled canvas overlays.
-- **Quote system** — `!quote [n]`, `!addquote`, `!delquote`, `!quotecount`.
+  viewer **duel**, via chat commands and/or Twitch channel-point redeems.
+- **Lucky Wheel** and **Risky Wheel**: weighted, PRISM-styled canvas overlays.
+- **Quote system**: `!quote [n]`, `!addquote`, `!delquote`, `!quotecount`.
 
 #### Overlays (transparent OBS browser sources, 1920×1080)
 - `static/interactive/{wheel,coinflip,slots,hype}.html` + shared `fx.js`.
@@ -1438,14 +1438,14 @@ All standard-library by default; `websocket-client` is an optional upgrade.
 ### Highlights
 
 **Real OBS status via OBS WebSocket**
-- OBS status used to come entirely from `tasklist`/PowerShell — it could only tell you "is obs64.exe running", nothing about what OBS was actually doing
+- OBS status used to come entirely from `tasklist`/PowerShell, so it could only tell you "is obs64.exe running", nothing about what OBS was actually doing
 - Stream Manager now talks to OBS's built-in WebSocket server (protocol v5, OBS 28+) to report the current scene name and actual streaming/recording state
-- Falls back automatically to the old process-detection method if the WebSocket isn't reachable or configured — nothing breaks for anyone who doesn't set it up
+- Falls back automatically to the old process-detection method if the WebSocket isn't reachable or configured, so nothing breaks for anyone who doesn't set it up
 - Read-only: it only asks OBS for status, never sends a command that changes anything
 
 **Setup (optional)**
 - In OBS: Tools → WebSocket Server Settings → enable it and copy the password
-- `pip install websocket-client`, then add `OBS_WEBSOCKET_PASSWORD` (and `OBS_WEBSOCKET_HOST`/`OBS_WEBSOCKET_PORT` if not using the defaults) to `.env` — see `.env.example`
+- `pip install websocket-client`, then add `OBS_WEBSOCKET_PASSWORD` (and `OBS_WEBSOCKET_HOST`/`OBS_WEBSOCKET_PORT` if not using the defaults) to `.env` (see `.env.example`)
 - The dashboard's OBS card now shows the current scene name and streaming/recording indicators when this is configured
 
 ## v0.3.2
@@ -1453,7 +1453,7 @@ All standard-library by default; `websocket-client` is an optional upgrade.
 ### Highlights
 
 **Bind to localhost by default**
-- The server used to bind to `0.0.0.0`, meaning anyone on the same network could reach the dashboard and its API — including `/api/update/install` and the scene switcher — with no authentication at all
+- The server used to bind to `0.0.0.0`, meaning anyone on the same network could reach the dashboard and its API (including `/api/update/install` and the scene switcher) with no authentication at all
 - It now binds to `127.0.0.1` by default; nothing outside the machine can reach it
 - Pass `--lan`, or set `"lan": true` in `config.json`, to explicitly opt back into `0.0.0.0` if you want to check the dashboard from another device on your network. The startup banner always states plainly which mode you're running in
 
@@ -1462,7 +1462,7 @@ All standard-library by default; `websocket-client` is an optional upgrade.
 ### Highlights
 
 **Dashboard UI polish**
-- Removed the non-functional "Overlays" / "Settings" sidebar nav items — they had no click handlers and didn't lead anywhere, which read as broken rather than intentional
+- Removed the non-functional "Overlays" / "Settings" sidebar nav items; they had no click handlers and didn't lead anywhere, which read as broken rather than intentional
 - Dropped the Google Fonts CDN dependency (`@import url(fonts.googleapis.com/...)`) in favor of a system font stack, so the dashboard no longer needs internet access to render correctly
 - Added a responsive breakpoint (`max-width: 760px`): the sidebar and status cards now stack full-width on narrow windows/phones instead of squeezing into unreadable columns
 - The request log now skips re-rendering entirely when nothing new has come in, instead of rebuilding the whole list on every 2-second poll
@@ -1474,7 +1474,7 @@ All standard-library by default; `websocket-client` is an optional upgrade.
 **Reorganized into a proper package**
 - `stream-manager.py` is now a thin entry point; all logic moved into a `stream_manager/` package (`config`, `console`, `logging_util`, `scenes`, `obs`, `system`, `twitch`, `state`, `updater`, `server`, `cli`)
 - Dashboard HTML/CSS/JS moved out of an inline Python string into real files under `static/` (`dashboard.html`, `dashboard.css`, `dashboard.js`), served via a new path-traversal-safe `/static/` route
-- No behavior change intended beyond the update mechanism below — same endpoints, same dashboard, same config.json
+- No behavior change intended beyond the update mechanism below: same endpoints, same dashboard, same config.json
 
 **Self-update now handles multiple files**
 - The old updater only replaced a single `stream-manager.py` asset, which would have left the new `stream_manager/` package stale after an update
