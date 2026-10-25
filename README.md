@@ -17,7 +17,8 @@ A local web dashboard + overlay server for OBS streaming: OBS/Twitch/system stat
 - **Spotify now-playing** — one-click connect, a `!song` command, and a dashboard widget (optional)
 - **One-click Twitch login** — a browser window opens for you to approve; no codes to copy
 - **Start, restart and shut down without a console** — Restart and Shut Down buttons on the dashboard (two clicks, no undo), a system-tray icon that owns the process, and a `prism-ctl` command a Stream Deck key can run. Restarting re-reads `config.json` and reconnects Twitch and OBS without touching the port your browser sources point at
-- **Claude integration (optional)** — a read-only MCP server lets Claude check OBS, Twitch, preflight and stream health for you. See **[Claude (MCP server)](#claude-mcp-server)**
+- **Shoutouts** — `!so @user` (and an automatic one on raids) shows a PRISM card with the streamer's avatar, last category and a recent clip, with mod controls (`!so skip|clear|on|off|ok`), a blocklist, cooldowns and an optional mod approval step for raid shoutouts. Configure it under `shoutout` in `config.json`
+- **Claude integration (optional)** — an MCP server lets Claude check OBS, Twitch, preflight and stream health, and, with your approval for each call, run shoutouts, switch the overlay theme, undo wheel effects, add quotes, and start or restart Stream Manager (never while you're live). See **[Claude (MCP server)](#claude-mcp-server)**
 - **Self-update** — checks GitHub Releases and installs from the dashboard (HTTPS-only, integrity-logged, with a backup first)
 - **Local by default & LAN-safe** — binds to `127.0.0.1`; with `--lan`, controls stay token-locked and you can require a password for remote devices
 

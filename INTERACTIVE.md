@@ -159,6 +159,9 @@ for one (add to queue). Click **Authorize** / **Connect Spotify** once.
    - `http://localhost:5000/static/interactive/coinflip.html`  (coin + 50/50)
    - `http://localhost:5000/static/interactive/slots.html`  (slot machine)
    - `http://localhost:5000/static/interactive/hype.html`  (raid / bits / sub)
+   - `http://localhost:5000/static/interactive/shoutout.html`  (`!so` card + clip)
+   - `http://localhost:5000/static/interactive/status.html`  (active wheel effects, with countdowns)
+   - `http://localhost:5000/static/interactive/featured.html`  (Featured Viewers, for Starting Soon)
 
    They show nothing until something is triggered, then animate and fade out.
    Add `?muted` to a URL to silence its sound, or `?vol=0.4` to set volume.
