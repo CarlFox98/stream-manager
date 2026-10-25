@@ -160,7 +160,7 @@ html,body{ width:100%; height:100%; overflow:hidden; background:transparent;
         <div class="so-eyebrow"><span class="dot"></span><span id="eyebrow">Shoutout</span></div>
         <div class="so-name" id="name">Streamer</div>
         <div class="so-handle" id="handle">@streamer</div>
-        <div class="so-cat" id="cat">Last seen streaming <b>&mdash;</b></div>
+        <div class="so-cat" id="cat">Last seen streaming <b>-</b></div>
       </div>
       <div class="so-clip" id="clip">
         <div class="noclip" id="noclip">
@@ -397,7 +397,7 @@ html,body{ width:100%; height:100%; overflow:hidden; background:transparent;
       catEl.innerHTML = (d.live ? 'Live now &middot; <b>' : 'Last seen streaming <b>')
         + esc(d.category) + '</b>';
     } else {
-      catEl.innerHTML = d.live ? 'Live right now &mdash; go watch!' : 'Go give them a follow';
+      catEl.innerHTML = d.live ? 'Live right now, go watch!' : 'Go give them a follow';
     }
     setAvatar(d);
     setClip(d);
