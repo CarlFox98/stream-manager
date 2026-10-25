@@ -6,7 +6,7 @@ REM over stdin/stdout. Add it to Claude's config as a local MCP server, e.g.
 REM
 REM     "stream-manager": { "command": "C:\\...\\mcp-server.bat" }
 REM
-REM Needs Python 3.10+ and:  pip install -r requirements-mcp.txt
+REM Needs Python 3.10+ and:  python -m pip install -r requirements-mcp.txt
 REM
 REM Nothing may be echoed to stdout here: stdout is the MCP channel, and one
 REM stray line breaks the connection. Errors from Python go to stderr.

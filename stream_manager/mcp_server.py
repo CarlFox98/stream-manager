@@ -22,7 +22,7 @@ Two deliberate differences from prism-ctl:
   · It ignores HTTP(S)_PROXY. The target is always 127.0.0.1, and a proxy set
     for the rest of the machine must never see (or break) this traffic.
 
-Needs the optional MCP SDK: pip install -r requirements-mcp.txt (Python 3.10+).
+Needs the optional MCP SDK: python -m pip install -r requirements-mcp.txt (Python 3.10+).
 """
 import json, os, sys, urllib.error, urllib.request
 
@@ -286,8 +286,11 @@ def main(argv=None):
     try:
         server = build_server()
     except ImportError:
-        print("The MCP SDK isn't installed. Run: pip install -r requirements-mcp.txt",
-              file=sys.stderr)
+        # Name the exact interpreter. On a PC with several Pythons, a bare
+        # "pip install" can land in a different one than this launcher runs.
+        req = os.path.join(BASE_DIR, "requirements-mcp.txt")
+        print("The MCP SDK isn't installed for this Python. Run:\n"
+              f'  "{sys.executable}" -m pip install -r "{req}"', file=sys.stderr)
         return 1
     server.run("stdio")
     return 0

@@ -153,7 +153,13 @@ this release.
 
 **Setup** (Python 3.10+):
 
-1. `pip install -r requirements-mcp.txt`
+1. In the Stream Manager folder, install the SDK into the **same Python** that
+   runs the app:
+   ```
+   python -m pip install -r requirements-mcp.txt
+   ```
+   Use `python -m pip`, not bare `pip`: on a PC with more than one Python, bare
+   `pip` can install into a different one, and the server then quits on start.
 2. Add it to Claude's desktop config (`%APPDATA%\Claude\claude_desktop_config.json`
    on Windows) under `mcpServers`, with your own path:
    ```json
@@ -170,7 +176,13 @@ this release.
      "env": { "PYTHONPATH": "C:\\path\\to\\stream-manager" }
    }
    ```
-3. Restart Claude. Ask it "is my stream healthy?".
+3. Fully quit Claude (tray icon → Quit) and reopen it. Ask it "is my stream healthy?".
+
+**If it doesn't connect:** Claude logs each start in
+`%APPDATA%\Claude\logs\mcp-server-stream-manager.log`. The usual cause is
+"The MCP SDK isn't installed": the line after it is the exact command to run,
+already pointing at the Python that the launcher used. Claude gives up after
+three failed starts, so quit and reopen it after fixing anything.
 
 How it stays safe:
 
