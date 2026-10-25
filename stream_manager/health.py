@@ -501,7 +501,7 @@ def preflight():
 def _loop():
     while not _stop.is_set():
         try:
-            if cfg("enabled"):
+            if cfg("enabled") and not _stop.is_set():
                 sample()
         except Exception as e:
             print(f"[health] monitor error: {e}")
@@ -516,5 +516,10 @@ def start():
     start._thread.start()
 
 
-def stop():
+def stop(timeout=3.0):
+    """Stop the monitor and wait briefly for a sample already in flight, so
+    nothing it does can land after the caller starts tearing things down."""
     _stop.set()
+    t = getattr(start, "_thread", None)
+    if t and t.is_alive() and t is not threading.current_thread():
+        t.join(timeout)

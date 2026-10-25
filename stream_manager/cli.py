@@ -46,9 +46,13 @@ def _graceful_stop(server):
     the spin history, and neither must leave the port bound — that is what
     would greet the relaunch one second later.
     """
-    for label, stop in (("chat", chat.stop), ("redeems", redeems.stop),
+    # Health goes FIRST. It samples chat and auth, so stopping them under a
+    # still-running monitor made every Restart/Shut Down log "Twitch auth: not
+    # authorized" + "chat: disconnected" as real alerts that were never cleared
+    # (7 of them on 2026-10-22 alone) — and could post a mod alert to chat.
+    for label, stop in (("health", health.stop),
+                        ("chat", chat.stop), ("redeems", redeems.stop),
                         ("eventsub", eventsub.stop), ("timers", timers.stop),
-                        ("health", health.stop),
                         # last: undo short wheel effects (flip, tint, emote-only…)
                         # so nothing is left applied once the app is gone
                         ("timed effects", timed.stop_loop)):

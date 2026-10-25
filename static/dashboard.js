@@ -20,9 +20,12 @@ function setOnline(v) {
   // useful than "connection lost", and the gap is expected — so it keeps the
   // message lcFire put there instead of being overwritten with a false alarm.
   if (!lcMode) connBanner(CONN_LOST, !v);
-  const pill = $('#conn-pill'); if (pill) pill.classList.toggle('off', !v);
-  const t = $('#conn-text'); if (t) t.textContent = v ? 'Live' : 'Offline';
-  const d = $('#conn-pill .status-dot'); if (d) d.className = 'status-dot ' + (v ? 'on' : 'off');
+  // #conn-pill is the top bar's; .js-conn is its narrow-window twin in the sidebar.
+  $$('#conn-pill, .js-conn').forEach(pill => {
+    pill.classList.toggle('off', !v);
+    const d = pill.querySelector('.status-dot'); if (d) d.className = 'status-dot ' + (v ? 'on' : 'off');
+  });
+  $$('#conn-text, .js-conn-text').forEach(t => { t.textContent = v ? 'Connected' : 'Disconnected'; });
 }
 async function api(path) {
   const r = await fetch(path, { headers: { 'X-SM-Token': TOK } });
@@ -59,7 +62,9 @@ function showTab(name) {
   $$('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + name));
   try { localStorage.setItem('sm_tab', name); } catch (e) {}
   if (name === 'commands') loadCommands();
-  if (name === 'config') loadConfig();
+  // Don't re-fetch over unsaved edits — that used to silently throw them away
+  // whenever you flipped to another tab and back.
+  if (name === 'config' && !cfgDirty.size) loadConfig();
   if (name === 'timers') loadTimers();
   if (name === 'quotes') loadQuotes();
   if (name === 'health') pollMonitor();
@@ -90,6 +95,10 @@ document.addEventListener('keydown', e => {
 
 // ── overview: status ────────────────────────────────────────────────
 let lastLogHead = null;
+// Log tab state — up here because render() (which assigns lastStatus) can run
+// before a `let` further down would be initialised.
+let lastStatus = null, logEventsOnly = true;
+try { logEventsOnly = localStorage.getItem('sm_log_events') !== '0'; } catch (e) {}
 let srvStartedAt = 0;
 function renderStatus(s) {
   // The session token is regenerated on every server start and baked into this
@@ -131,8 +140,7 @@ function renderStatus(s) {
   $('#server-port').textContent = ':' + s.server.port;
   // Read the running version rather than trusting a number typed into the
   // markup — that one was two releases behind and said so on every page load.
-  const vc = $('#ver-chip');
-  if (vc && s.server.version) vc.textContent = 'v' + s.server.version;
+  if (s.server.version) $$('#ver-chip, .js-ver').forEach(vc => { vc.textContent = 'v' + s.server.version; });
 
   // No supervisor means exit code 42 goes nowhere and Restart is really just
   // Shutdown. Say so on the button rather than finding out by clicking it.
@@ -153,16 +161,29 @@ function renderStatus(s) {
   $('#ram-pct-label').textContent = s.system.ram_pct + '% used';
   if (s.system.gpu) $('#gpu-name').textContent = s.system.gpu;
 
-  if (s.requests && s.requests.length && s.requests[0] !== lastLogHead) {
-    lastLogHead = s.requests[0];
-    $('#log-box').innerHTML = s.requests.map(r => {
+  lastStatus = s;
+  renderLog();
+  renderHealth();
+}
+// Log tab: "Hide served files" (default on) shows the server's events buffer,
+// which static-file lines can't push out. Off = the full request log.
+function renderLog(force) {
+  const s = lastStatus; if (!s) return;
+  const lines = logEventsOnly && Array.isArray(s.events) ? s.events : (s.requests || []);
+  const head = (logEventsOnly ? 'e:' : 'r:') + (lines[0] || '');
+  if (!force && head === lastLogHead) return;
+  lastLogHead = head;
+  if (!lines.length) { $('#log-box').innerHTML = `<div class="log-entry"><span class="log-text">${logEventsOnly
+    ? 'No events since Stream Manager started — only served files so far. Switch off “Hide served files” to see them.'
+    : 'Nothing logged yet.'}</span></div>`; return; }
+  {
+    $('#log-box').innerHTML = lines.map(r => {
       const m = r.match(/^\[(\d+:\d+:\d+)\]\s+(.*)/);
       return m
         ? `<div class="log-entry"><span class="log-timestamp">[${esc(m[1])}]</span> <span class="log-text">${esc(m[2])}</span></div>`
         : `<div class="log-entry"><span class="log-text">${esc(r)}</span></div>`;
     }).join('');
   }
-  renderHealth();
 }
 function fmtUptime(secs) {
   if (!secs || secs <= 0) return '';
@@ -223,10 +244,15 @@ async function installUpdate() {
 }
 
 // ── interactive ─────────────────────────────────────────────────────
-function ixWhen(ts) {
-  const d = Math.max(0, Math.floor(Date.now()/1000 - ts));
-  if (d < 60) return d + 's ago'; if (d < 3600) return Math.floor(d/60) + 'm ago'; return Math.floor(d/3600) + 'h ago';
+// One relative-time format for the whole dashboard: hours stop at 48, then days.
+function fmtAgo(ts, secs = false) {
+  const d = Math.max(0, Math.floor(Date.now() / 1000 - ts));
+  if (d < 60) return secs ? d + 's ago' : 'just now';
+  if (d < 3600) return Math.floor(d / 60) + 'm ago';
+  if (d < 48 * 3600) return Math.floor(d / 3600) + 'h ago';
+  return Math.floor(d / 86400) + 'd ago';
 }
+const ixWhen = ts => fmtAgo(ts, true);
 async function renderInteractive() {
   let d; try { d = await api('/api/interactive'); } catch (e) { return; }
   const st = d.auth?.status, dot = $('#ix-auth-dot'), label = $('#ix-auth-label'), hint = $('#ix-auth-hint');
@@ -335,16 +361,51 @@ async function saveTimers() {
 // ── quotes tab ──────────────────────────────────────────────────────
 async function loadQuotes() {
   let d; try { d = await api('/api/quotes'); } catch (e) { $('#quote-list').innerHTML = '<div class="stat-label">Could not load.</div>'; return; }
-  $('#quote-count').textContent = d.count ? `(${d.count})` : '';
   const qs = d.quotes || [];
-  $('#quote-list').innerHTML = qs.length ? qs.slice().reverse().map(q => `
+  // Ids are stable across deletions, so after a delete the count and the
+  // highest number disagree — say both rather than look like a miscount.
+  const maxId = qs.reduce((m, q) => Math.max(m, Number(q.id) || 0), 0);
+  $('#quote-count').textContent = !d.count ? ''
+    : maxId > d.count ? `(${d.count} · #1–${maxId})` : `(${d.count})`;
+  quoteData = qs;
+  renderQuotes();
+}
+let quoteData = [], quoteEditing = null;
+function renderQuotes() {
+  const term = ($('#q-search')?.value || '').trim().toLowerCase().replace(/^#/, '');
+  const shown = quoteData.slice().reverse().filter(q => !term
+    || String(q.id) === term
+    || (q.text || '').toLowerCase().includes(term)
+    || (q.added_by || '').toLowerCase().includes(term));
+  $('#quote-list').innerHTML = !quoteData.length ? '<div class="stat-label">No quotes yet.</div>'
+    : !shown.length ? '<div class="stat-label">No quotes match.</div>'
+    : shown.map(q => String(q.id) === String(quoteEditing) ? `
+    <div class="cmd-row quote-row editing">
+      <div class="cmd-main">
+        <span class="qnum">#${esc(q.id)}</span>
+        <input class="field" id="q-edit-text" maxlength="400" value="${esc(q.text)}" aria-label="Edit quote #${esc(q.id)}">
+      </div>
+      <button class="btn-primary" data-q-save="${esc(q.id)}">Save</button>
+      <button class="scene-btn" data-q-cancel="1">Cancel</button>
+    </div>` : `
     <div class="cmd-row quote-row">
       <div class="cmd-main">
         <div class="cmd-desc"><span class="qnum">#${esc(q.id)}</span>${esc(q.text)}</div>
         <div class="mini">${esc(q.added_by || '')}${q.date ? ' · ' + esc(q.date) : ''}</div>
       </div>
+      <button class="icon-btn edit" data-q-edit="${esc(q.id)}" title="Edit">✎</button>
       <button class="icon-btn" data-q-del="${esc(q.id)}" title="Delete">✕</button>
-    </div>`).join('') : '<div class="stat-label">No quotes yet.</div>';
+    </div>`).join('');
+  const inp = $('#q-edit-text'); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+function editQuote(id) { quoteEditing = id; renderQuotes(); }
+function cancelQuoteEdit() { quoteEditing = null; renderQuotes(); }
+async function saveQuoteEdit(id) {
+  const text = ($('#q-edit-text')?.value || '').trim();
+  if (!text) { toast('Quote text can’t be empty', 'err'); return; }
+  const { data: d } = await post('/api/quotes/edit', { id: Number(id), text });
+  if (d.ok) { quoteEditing = null; toast('Quote #' + id + ' updated', 'ok'); loadQuotes(); }
+  else toast('Edit failed', 'err');
 }
 async function addQuote() {
   const text = $('#q-text').value.trim(), msg = $('#q-msg'); msg.className = 'scene-msg';
@@ -379,10 +440,22 @@ async function renderStats() {
     ? players.slice(0, 8).map((p, i) => `<div class="row"><span class="who">${i+1}. ${esc(p.user)}</span><span class="n">${esc(p.plays)} plays${p.wins ? ' · ' + esc(p.wins) + ' wins' : ''}</span></div>`).join('')
     : '<div class="stat-label">No plays yet.</div>';
 }
+// ── test-to-chat toggle (shared by Quick Test and Test an Outcome) ──
+// Off by default: a test mid-stream shouldn't post "Dashboard flipped heads".
+let testChat = false;
+try { testChat = localStorage.getItem('sm_test_chat') === '1'; } catch (e) {}
+function syncTestChat() { $$('.test-chat').forEach(cb => { cb.checked = testChat; }); }
+document.addEventListener('change', e => {
+  if (!e.target.classList?.contains('test-chat')) return;
+  testChat = e.target.checked; syncTestChat();
+  try { localStorage.setItem('sm_test_chat', testChat ? '1' : '0'); } catch (err) {}
+});
+syncTestChat();
+
 async function ixTest(action) {
   const msg = $('#ix-msg'); msg.className = 'scene-msg'; msg.textContent = 'Triggering ' + action + '…';
   try {
-    const { data: d } = await post('/api/interactive/test', { action, user: 'Dashboard' });
+    const { data: d } = await post('/api/interactive/test', { action, user: 'Dashboard', chat: testChat });
     msg.classList.add(d.ok ? 'ok' : 'err');
     msg.textContent = d.ok ? `▶ ${action} → ${d.result ?? 'sent'} (check your overlay)` : (d.error || 'Failed.');
   } catch (e) { msg.className = 'scene-msg err'; msg.textContent = 'Request failed.'; }
@@ -422,13 +495,16 @@ async function loadCommands() {
   $('#cmd-builtins').innerHTML = html || '<div class="stat-label">No commands.</div>';
 
   const custom = d.custom || [];
+  window.__ccList = custom;
   $('#cmd-custom').innerHTML = custom.length ? custom.map(c => `
     <div class="cmd-row">
       <div class="cmd-main">
         <div class="cmd-name"><span class="mono">${esc(pfx + c.name)}</span> ${c.permission === 'mods' ? '<span class="cmd-badge">mods</span>' : ''}</div>
         <div class="cmd-desc">${esc(c.response)}</div>
+        <div class="mini">${esc(ccMeta(c))}</div>
       </div>
       ${sw(c.enabled, `data-cc-toggle="${esc(c.name)}"`)}
+      <button class="icon-btn edit" title="Edit" data-cc-edit="${esc(c.name)}">✎</button>
       <button class="icon-btn" title="Delete" data-cc-del="${esc(c.name)}">✕</button>
     </div>`).join('') : '<div class="stat-label">No custom commands yet.</div>';
 }
@@ -436,13 +512,50 @@ async function toggleCommand(name, enabled) {
   const { data: d } = await post('/api/commands/toggle', { name, enabled });
   if (d.ok) toast(`${name} ${enabled ? 'enabled' : 'disabled'}`, 'ok'); else { toast('Toggle failed', 'err'); loadCommands(); }
 }
+function ccMeta(c) {
+  const bits = [c.uses === 1 ? 'used once' : `used ${fmtNum(c.uses || 0)} times`];
+  if (c.user_cd) bits.push(`${c.user_cd}s per viewer`);
+  if (c.global_cd) bits.push(`${c.global_cd}s global`);
+  if (!c.user_cd && !c.global_cd) bits.push('no cooldown');
+  return bits.join(' · ');
+}
+// Editing reuses the add form: the server's upsert handles both. A rename is
+// upsert-the-new-name, then delete the old one (only once the new one saved).
+let ccEditing = null;   // { name, enabled } while editing an existing command
+function editCustom(name) {
+  const c = (window.__ccList || []).find(x => x.name === name); if (!c) return;
+  ccEditing = { name: c.name, enabled: c.enabled };
+  $('#cc-name').value = c.name; $('#cc-response').value = c.response; $('#cc-perm').value = c.permission;
+  $('#cc-ucd').value = c.user_cd || 0; $('#cc-gcd').value = c.global_cd || 0;
+  $('#cc-save').textContent = 'Save changes'; $('#cc-cancel').hidden = false;
+  $('#cc-response').focus();
+}
+function cancelCustomEdit() {
+  ccEditing = null;
+  $('#cc-name').value = ''; $('#cc-response').value = ''; $('#cc-perm').value = 'everyone';
+  $('#cc-ucd').value = 0; $('#cc-gcd').value = 0;
+  $('#cc-save').textContent = 'Add command'; $('#cc-cancel').hidden = true;
+  const msg = $('#cmd-msg'); msg.className = 'scene-msg'; msg.textContent = '';
+}
 async function saveCustom() {
-  const name = $('#cc-name').value.trim(), response = $('#cc-response').value.trim(), permission = $('#cc-perm').value;
+  const name = $('#cc-name').value.trim().replace(/^!+/, '').toLowerCase(), response = $('#cc-response').value.trim(), permission = $('#cc-perm').value;
   const msg = $('#cmd-msg'); msg.className = 'scene-msg';
   if (!name || !response) { msg.classList.add('err'); msg.textContent = 'Name and response are required.'; return; }
-  const { data: d } = await post('/api/commands/custom', { action: 'add', name, response, permission, enabled: true });
+  const editing = ccEditing;
+  const renamed = editing && editing.name !== name;
+  if (!editing || renamed) {
+    if ((window.__ccList || []).some(x => x.name === name) && !confirm('!' + name + ' already exists. Replace it?')) return;
+  }
+  const user_cd = Math.max(0, +$('#cc-ucd').value || 0), global_cd = Math.max(0, +$('#cc-gcd').value || 0);
+  const { data: d } = await post('/api/commands/custom', { action: editing ? 'update' : 'add', name, response, permission,
+    enabled: editing ? editing.enabled : true, user_cd, global_cd });
+  if (d.ok && renamed) await post('/api/commands/custom', { action: 'delete', name: editing.name });
   msg.classList.add(d.ok ? 'ok' : 'err'); msg.textContent = d.message || (d.ok ? 'Saved.' : 'Failed.');
-  if (d.ok) { $('#cc-name').value = ''; $('#cc-response').value = ''; toast('Added !' + name, 'ok'); loadCommands(); }
+  if (d.ok) {
+    toast((editing ? 'Updated !' : 'Added !') + name, 'ok');
+    cancelCustomEdit(); msg.className = 'scene-msg ok'; msg.textContent = d.message || 'Saved.';
+    loadCommands();
+  }
 }
 async function deleteCustom(name) {
   if (!confirm('Delete !' + name + '?')) return;
@@ -456,10 +569,45 @@ async function toggleCustom(name, enabled) {
 }
 
 // ── config tab ──────────────────────────────────────────────────────
+// Unsaved-change tracking: each top-level section is keyed by its Save
+// button's data-save value. Edits mark it dirty; a sticky bar offers Save all.
+const cfgDirty = new Set();
+const CFG_ORDER = ['prefix', 'cooldowns', 'redeems', 'automation', 'eventsub', 'alerts', 'wheels'];
+function cfgMark(key, dirty) {
+  if (!key) return;
+  dirty ? cfgDirty.add(key) : cfgDirty.delete(key);
+  const sec = $(`#cfg-root [data-cfg="${key}"]`); if (sec) sec.classList.toggle('dirty', dirty);
+  const bar = $('#cfg-savebar'); if (!bar) return;
+  bar.classList.toggle('show', cfgDirty.size > 0);
+  const n = cfgDirty.size;
+  $('#cfg-savebar-text').textContent = n === 1 ? '1 section has unsaved changes' : `${n} sections have unsaved changes`;
+}
+function cfgOnEdit(e) {
+  const sec = e.target.closest('[data-cfg]'); if (sec) cfgMark(sec.dataset.cfg, true);
+}
+async function cfgSaveAll() {
+  const btn = $('#cfg-saveall'); btn.disabled = true;
+  const failed = [];
+  for (const key of CFG_ORDER.filter(k => cfgDirty.has(k))) {
+    if (!(await onSave(key))) failed.push(key);
+  }
+  btn.disabled = false;
+  if (failed.length) toast('Not saved: ' + failed.join(', '), 'err');
+}
+function cfgDiscard() {
+  [...cfgDirty].forEach(k => cfgMark(k, false));
+  loadConfig();
+}
 const CD_KEYS = ['coinflip','5050','slots','dice','duel','lucky','risky','quote'];
 async function loadConfig() {
   let c; try { c = await api('/api/config'); } catch (e) { $('#cfg-root').innerHTML = '<div class="stat-label">Could not load.</div>'; return; }
   const root = $('#cfg-root'); root.innerHTML = '';
+  [...cfgDirty].forEach(k => cfgMark(k, false));
+  if (!root.dataset.wired) {
+    root.dataset.wired = '1';
+    root.addEventListener('input', cfgOnEdit);
+    root.addEventListener('change', cfgOnEdit);
+  }
 
   // Command prefix
   root.appendChild(section('Command prefix', 'The character chat commands start with.',
@@ -526,13 +674,109 @@ async function loadConfig() {
   root.appendChild(section('Viewer alerts', 'First-time chatters and new followers fire the hype overlay. Use {user} in messages.', alRows));
 
   // Wheels (JSON editor)
-  root.appendChild(section('Wheels (advanced)', 'Edit Lucky/Risky wheel segments as JSON. Validated on save.',
-    `<textarea class="field" id="cfg-wheels" spellcheck="false">${esc(JSON.stringify(c.wheels || {}, null, 2))}</textarea>
-     <div class="save-row"><button class="btn-primary" data-save="wheels">Save wheels</button><span class="mini" id="cfg-wheels-err"></span></div>`));
+  wheelData = JSON.parse(JSON.stringify(c.wheels || {}));
+  wheelMode = 'table';
+  root.appendChild(section('Wheels', 'Segments on the Lucky and Risky wheels. Chance is each segment\'s weight out of the wheel\'s total. Validated on save.',
+    `<div id="cfg-wheels-ui"></div>
+     <textarea class="field" id="cfg-wheels" spellcheck="false" hidden></textarea>
+     <div class="save-row"><button class="btn-primary" data-save="wheels">Save wheels</button>
+       <button class="scene-btn" data-wh-act="mode">Edit as JSON</button>
+       <span class="mini" id="cfg-wheels-err"></span></div>`));
+  renderWheelEditor();
+  if (!root.dataset.whWired) {
+    root.dataset.whWired = '1';
+    root.addEventListener('input', whEditorInput);
+    root.addEventListener('change', whEditorInput);
+    root.addEventListener('click', whEditorClick);
+  }
 }
+// ── wheel segment table editor ──
+// wheelData is the working copy; the table writes straight into it. Keys the
+// table doesn't show (title, color, no_repeat, severe_cooldown_seconds, and any
+// unknown segment fields) ride along untouched. JSON mode is the escape hatch.
+let wheelData = {}, wheelMode = 'table';
+function whChance(w, s) {
+  const total = (w.segments || []).reduce((t, x) => t + (Number(x.weight ?? 1) || 0), 0);
+  const wt = Number(s.weight ?? 1) || 0;
+  return total ? (wt / total * 100) : 0;
+}
+function whOutcomeOpts(cur) {
+  const keys = Object.keys(OUTCOME_LABELS);
+  if (cur && !keys.includes(cur)) keys.push(cur);
+  return '<option value="">— label only —</option>' + keys.map(k =>
+    `<option value="${esc(k)}"${k === cur ? ' selected' : ''}>${esc(OUTCOME_LABELS[k] || k)}</option>`).join('');
+}
+function renderWheelEditor() {
+  const box = $('#cfg-wheels-ui'); if (!box) return;
+  box.innerHTML = Object.keys(wheelData).map(kind => {
+    const w = wheelData[kind] || {}, segs = w.segments || [];
+    return `<div class="wh-ed" data-wk="${esc(kind)}">
+      <div class="wh-ed-head"><span class="wh-ed-dot" style="background:${esc(w.color || 'var(--purple)')}"></span>
+        <strong>${esc(w.title || kind)}</strong><span class="mini">${segs.length} segments</span></div>
+      <div class="wh-ed-grid">
+        <span class="mini">Label</span><span class="mini">Weight</span><span class="mini">Outcome</span>
+        <span class="mini" title="Severe outcomes share the wheel's severe cooldown">Severe</span><span class="mini">Chance</span><span></span>
+        ${segs.map((s, i) => `
+          <input class="field" maxlength="60" value="${esc(s.label || '')}" data-wh-f="label" data-wh-i="${i}" aria-label="Segment ${i + 1} label">
+          <input class="field num" type="number" min="0" step="1" value="${esc(s.weight ?? 1)}" data-wh-f="weight" data-wh-i="${i}" aria-label="Segment ${i + 1} weight">
+          <select class="field" data-wh-f="outcome" data-wh-i="${i}" aria-label="Segment ${i + 1} outcome">${whOutcomeOpts(s.outcome || '')}</select>
+          <input type="checkbox" ${s.severe ? 'checked' : ''} data-wh-f="severe" data-wh-i="${i}" aria-label="Segment ${i + 1} severe">
+          <span class="wh-chance mono" data-wh-chance="${i}">${whChance(w, s).toFixed(1)}%</span>
+          <span class="wh-ed-btns">
+            <button class="icon-btn" title="Move up" data-wh-act="up" data-wh-i="${i}" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button class="icon-btn" title="Move down" data-wh-act="down" data-wh-i="${i}" ${i === segs.length - 1 ? 'disabled' : ''}>↓</button>
+            <button class="icon-btn" title="Remove" data-wh-act="rm" data-wh-i="${i}" ${segs.length <= 1 ? 'disabled' : ''}>✕</button>
+          </span>`).join('')}
+      </div>
+      <button class="scene-btn wh-add" data-wh-act="add">+ Add segment</button>
+    </div>`;
+  }).join('') || '<div class="stat-label">No wheels configured.</div>';
+}
+function whEditorInput(e) {
+  const f = e.target.dataset?.whF; if (!f) return;
+  const kind = e.target.closest('[data-wk]')?.dataset.wk, i = +e.target.dataset.whI;
+  const w = wheelData[kind]; if (!w || !w.segments[i]) return;
+  const s = w.segments[i];
+  if (f === 'label') s.label = e.target.value;
+  else if (f === 'weight') s.weight = Math.max(0, Number(e.target.value) || 0);
+  else if (f === 'outcome') { if (e.target.value) s.outcome = e.target.value; else delete s.outcome; }
+  else if (f === 'severe') { if (e.target.checked) s.severe = true; else delete s.severe; }
+  if (f === 'weight') w.segments.forEach((x, j) => {
+    const el = $(`[data-wk="${kind}"] [data-wh-chance="${j}"]`); if (el) el.textContent = whChance(w, x).toFixed(1) + '%';
+  });
+}
+function whEditorClick(e) {
+  const b = e.target.closest('[data-wh-act]'); if (!b || b.disabled) return;
+  const act = b.dataset.whAct, err = $('#cfg-wheels-err');
+  if (act === 'mode') {
+    err.textContent = '';
+    const ta = $('#cfg-wheels'), ui = $('#cfg-wheels-ui');
+    if (wheelMode === 'table') {
+      ta.value = JSON.stringify(wheelData, null, 2);
+      wheelMode = 'json'; ta.hidden = false; ui.hidden = true; b.textContent = 'Back to table';
+    } else {
+      let parsed; try { parsed = JSON.parse(ta.value); } catch (x) { err.textContent = 'Invalid JSON: ' + x.message; return; }
+      wheelData = parsed; renderWheelEditor();
+      wheelMode = 'table'; ta.hidden = true; ui.hidden = false; b.textContent = 'Edit as JSON';
+    }
+    return;
+  }
+  const kind = b.closest('[data-wk]')?.dataset.wk, w = wheelData[kind]; if (!w) return;
+  const segs = w.segments = w.segments || [], i = +b.dataset.whI;
+  if (act === 'add') segs.push({ label: 'New segment', weight: 1 });
+  if (act === 'rm' && segs.length > 1) segs.splice(i, 1);
+  if (act === 'up' && i > 0) [segs[i - 1], segs[i]] = [segs[i], segs[i - 1]];
+  if (act === 'down' && i < segs.length - 1) [segs[i + 1], segs[i]] = [segs[i], segs[i + 1]];
+  renderWheelEditor();
+  cfgMark('wheels', true);
+  if (act === 'add') { const inp = $$(`[data-wk="${kind}"] [data-wh-f="label"]`).pop(); if (inp) { inp.focus(); inp.select(); } }
+}
+
 function section(title, hint, inner) {
   const el = document.createElement('div'); el.className = 'cfg-section';
-  el.innerHTML = `<h4>${esc(title)}</h4><div class="cfg-hint">${esc(hint)}</div>${inner}`;
+  el.innerHTML = `<h4>${esc(title)}<span class="unsaved-dot">● unsaved</span></h4><div class="cfg-hint">${esc(hint)}</div>${inner}`;
+  const key = el.querySelector('[data-save]')?.dataset.save;
+  if (key) el.dataset.cfg = key;
   return el;
 }
 function toggle(label, id, checked) { return `<div class="cfg-row2"><span class="lbl">${esc(label)}</span>${sw(checked, `id="${id}"`)}</div>`; }
@@ -543,6 +787,11 @@ async function saveConfig(section, data) {
   return d.ok;
 }
 async function onSave(what) {
+  const ok = await onSaveSection(what);
+  if (ok) cfgMark(what, false);
+  return !!ok;
+}
+async function onSaveSection(what) {
   if (what === 'prefix') return saveConfig('command_prefix', $('#cfg-prefix').value || '!');
   if (what === 'cooldowns') {
     const out = { mods_bypass: $('#cfg-cd-mods').checked };
@@ -569,6 +818,11 @@ async function onSave(what) {
     follow_alert: $('#cfg-al-follow').checked, follow_message: $('#cfg-al-followmsg').value });
   if (what === 'wheels') {
     const errEl = $('#cfg-wheels-err'); errEl.textContent = '';
+    if (wheelMode === 'table') {
+      const blank = Object.entries(wheelData).find(([, w]) => (w.segments || []).some(s => !String(s.label || '').trim()));
+      if (blank) { errEl.textContent = `${blank[1].title || blank[0]}: every segment needs a label`; toast('Wheels: a segment has no label', 'err'); return; }
+      return saveConfig('wheels', wheelData);
+    }
     let parsed; try { parsed = JSON.parse($('#cfg-wheels').value); }
     catch (e) { errEl.textContent = 'Invalid JSON: ' + e.message; toast('Wheels: invalid JSON', 'err'); return; }
     return saveConfig('wheels', parsed);
@@ -712,7 +966,7 @@ const REQ_TEXT = { live: 'you\'re offline', target: 'needs a real viewer', strea
   steam: 'Steam library not found', obs: 'OBS WebSocket not reachable / PNG TUBER not found',
   overlay_sets: 'only one overlay set', not_mod: 'viewer is a mod' };
 const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-const ago = ts => { const m = Math.round((Date.now() / 1000 - ts) / 60); return m < 1 ? 'just now' : m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`; };
+const ago = ts => fmtAgo(ts);
 
 async function renderWheel() {
   if (!$('#wh-fx')) return;
@@ -752,7 +1006,7 @@ async function whEndFx(id) { const r = await post('/api/timed/end', { id }); if 
 async function whOwed(id, st) { await post('/api/owed/resolve', { id, status: st }); renderWheel(); }
 async function whFeatRm(login) { await post('/api/featured/remove', { login }); renderWheel(); }
 async function whTest(outcome) {
-  const r = await post('/api/wheel/test', { outcome });
+  const r = await post('/api/wheel/test', { outcome, chat: testChat });
   const m = $('#wh-msg'); if (m) m.textContent = r.ok ? `✓ ${OUTCOME_LABELS[outcome]} — ${r.data.message || 'done'}` : `✗ ${r.data.error || r.data.message || 'failed'}`;
   renderWheel();
 }
@@ -782,6 +1036,10 @@ document.addEventListener('click', e => {
   const del = t.closest('[data-cc-del]'); if (del) return deleteCustom(del.dataset.ccDel);
   const tmDel = t.closest('[data-tm-del]'); if (tmDel) return deleteTimerRow(+tmDel.dataset.tmDel);
   const qDel = t.closest('[data-q-del]'); if (qDel) return deleteQuote(qDel.dataset.qDel);
+  const qEd = t.closest('[data-q-edit]'); if (qEd) return editQuote(qEd.dataset.qEdit);
+  const qSv = t.closest('[data-q-save]'); if (qSv) return saveQuoteEdit(qSv.dataset.qSave);
+  if (t.closest('[data-q-cancel]')) return cancelQuoteEdit();
+  const ccEd = t.closest('[data-cc-edit]'); if (ccEd) return editCustom(ccEd.dataset.ccEdit);
   const prev = t.closest('[data-preview]'); if (prev) return switchPreview(prev.dataset.preview);
   const save = t.closest('[data-save]'); if (save) return onSave(save.dataset.save);
   const owedBtn = t.closest('[data-owed]'); if (owedBtn) return whOwed(owedBtn.dataset.owed, owedBtn.dataset.st);
@@ -794,7 +1052,8 @@ document.addEventListener('click', e => {
      'cc-add': saveCustom, 'tm-add': addTimerRow, 'tm-save': saveTimers, 'q-add': addQuote,
      'sp-auth': spAuth, 'sp-logout': spLogout, 'fx-undo-all': whUndoAll,
      'preflight': runPreflight, 'hm-mute': hmToggleMute,
-     'lc-restart': () => lcArm('restart'), 'lc-shutdown': () => lcArm('shutdown')
+     'lc-restart': () => lcArm('restart'), 'lc-shutdown': () => lcArm('shutdown'),
+     'cfg-saveall': cfgSaveAll, 'cfg-discard': cfgDiscard, 'cc-cancel': cancelCustomEdit
    }[act.dataset.act] || (() => {}))();
 });
 document.addEventListener('change', e => {
@@ -965,4 +1224,20 @@ initSSE();
 
 // restore last tab
 try { const t = localStorage.getItem('sm_tab'); if (t && t !== 'overview') showTab(t); } catch (e) {}
+const logCb = $('#log-events-only');
+if (logCb) {
+  logCb.checked = logEventsOnly;
+  logCb.addEventListener('change', () => {
+    logEventsOnly = logCb.checked;
+    try { localStorage.setItem('sm_log_events', logEventsOnly ? '1' : '0'); } catch (e) {}
+    renderLog(true);
+  });
+}
+// Quotes: live search; Enter saves / Escape cancels an inline edit.
+$('#q-search')?.addEventListener('input', renderQuotes);
+document.addEventListener('keydown', e => {
+  if (e.target.id !== 'q-edit-text') return;
+  if (e.key === 'Enter') { e.preventDefault(); saveQuoteEdit(quoteEditing); }
+  if (e.key === 'Escape') cancelQuoteEdit();
+});
 })();

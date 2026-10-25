@@ -33,3 +33,6 @@ data/
 # repo. package.json and the lockfile ARE tracked so the setup is
 # reproducible — only the installed tree is ignored.
 node_modules/
+
+# local backup folders from hand-run upgrade rounds
+.qol-backup*/

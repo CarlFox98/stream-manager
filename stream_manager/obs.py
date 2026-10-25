@@ -16,12 +16,34 @@ _OBS_PROC_NAMES = ("obs64.exe", "obs32.exe", "obs.exe", "obs")
 
 def get_obs_status(state):
     if get_obs_ws_status(state):
+        # The WebSocket gives scene/stream state but not PID or process uptime,
+        # so without this they froze at whatever the first poll saw ("Uptime: 1s").
+        _fill_obs_process_info(state)
         state["obs"]["ws"] = True
         return
     state["obs"]["ws"] = False
     if _get_obs_status_psutil(state):
         return
     _get_obs_status_tasklist(state)
+
+
+def _fill_obs_process_info(state):
+    """PID + process uptime only, leaving the WebSocket's scene/stream fields
+    alone. psutil only — the tasklist/PowerShell path is too slow to run every
+    poll, so without psutil the values are simply left as they were."""
+    try:
+        import time
+        import psutil
+    except ImportError:
+        return
+    for p in psutil.process_iter(["name", "create_time"]):
+        try:
+            if (p.info.get("name") or "").lower() in _OBS_PROC_NAMES:
+                state["obs"]["pid"] = str(p.pid)
+                state["obs"]["uptime"] = int(time.time() - (p.info.get("create_time") or time.time()))
+                return
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
 
 
 def _get_obs_status_psutil(state):

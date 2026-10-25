@@ -75,6 +75,22 @@ def delete(qid):
         return removed
 
 
+def edit(qid, text):
+    """Replace a quote's text, keeping its id, author and date. Returns the
+    updated quote, or None if the id doesn't exist or the text is empty."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    with _lock:
+        _load()
+        for q in _store["quotes"]:
+            if q["id"] == qid:
+                q["text"] = text
+                _save()
+                return dict(q)
+    return None
+
+
 def get(qid):
     with _lock:
         _load()

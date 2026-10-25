@@ -84,6 +84,8 @@ def get_custom(name):
 
 
 def list_customs():
+    from . import stats
+    uses = stats.command_uses()
     out = []
     for name, c in _customs().items():
         if not isinstance(c, dict):
@@ -93,6 +95,9 @@ def list_customs():
             "response": c.get("response", ""),
             "permission": c.get("permission", "everyone"),
             "enabled": bool(c.get("enabled", True)),
+            "user_cd": int(c.get("user_cd", 0) or 0),
+            "global_cd": int(c.get("global_cd", 0) or 0),
+            "uses": uses.get(name, 0),
         })
     out.sort(key=lambda x: x["name"])
     return out
@@ -101,8 +106,22 @@ def list_customs():
 _NAME_RE = re.compile(r"^[a-z0-9_]{1,25}$")
 
 
-def upsert_custom(name, response, permission="everyone", enabled=True):
-    """Add or update a custom command. Returns (ok, message)."""
+def _cd(v, keep):
+    """Cooldown seconds: None keeps the existing value; else clamp to 0–3600."""
+    if v is None:
+        return keep
+    try:
+        return max(0, min(3600, int(float(v))))
+    except (TypeError, ValueError):
+        return keep
+
+
+def upsert_custom(name, response, permission="everyone", enabled=True, user_cd=None, global_cd=None):
+    """Add or update a custom command. Returns (ok, message).
+
+    user_cd / global_cd: seconds. None leaves an existing command's cooldowns as
+    they are, so callers that only flip `enabled` can't wipe them.
+    """
     name = (name or "").lower().lstrip("!").strip()
     if not _NAME_RE.match(name):
         return False, "Name must be 1-25 chars: letters, numbers, underscore"
@@ -113,9 +132,12 @@ def upsert_custom(name, response, permission="everyone", enabled=True):
         return False, "Response text is required"
     if permission not in ("everyone", "mods"):
         permission = "everyone"
+    prev = _customs().get(name) or {}
     from . import config as config_mod
     config_mod.save_config({"commands": {"custom": {name: {
         "response": response[:400], "permission": permission, "enabled": bool(enabled),
+        "user_cd": _cd(user_cd, int(prev.get("user_cd", 0) or 0)),
+        "global_cd": _cd(global_cd, int(prev.get("global_cd", 0) or 0)),
     }}}})
     return True, f"Saved !{name}"
 
@@ -152,6 +174,34 @@ def permission_ok(custom, can_edit):
 
 
 # ── dashboard view ──────────────────────────────────────────────────────────
+# How each everyone-usable built-in is advertised in !commands (args shown as hints).
+_HELP_SHAPES = {"8ball": "8ball <q>", "duel": "duel @user", "quote": "quote [n]", "dice": "dice"}
+
+
+def help_line(prefix="!", can_edit=False):
+    """The !commands reply, built from what's actually switched on.
+
+    It used to be a hardcoded string: it never listed custom commands (so
+    !discord was invisible) and kept advertising built-ins after they were
+    turned off on the dashboard for another bot to own.
+    """
+    shown = []
+    for name, _aliases, _desc, _cat, mods_only in BUILTINS:
+        if name == "commands" or not is_enabled(name) or (mods_only and not can_edit):
+            continue
+        if name in ("addquote", "delquote", "so", "lucky", "risky") and not can_edit:
+            continue
+        shown.append(prefix + _HELP_SHAPES.get(name, name))
+    customs = [c for c in list_customs()
+               if c["enabled"] and (c["permission"] != "mods" or can_edit)]
+    line = "Commands: " + " · ".join(shown)
+    if customs:
+        line += " | Info: " + " · ".join(prefix + c["name"] for c in customs)
+    if not can_edit:
+        line += " (mods have a few more)"
+    return line[:480]
+
+
 def public_list():
     """Everything the Commands tab needs."""
     prefix = config.get("command_prefix", "!") or "!"

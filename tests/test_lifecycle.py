@@ -284,8 +284,8 @@ def test_graceful_stop_saves_everything_and_closes(monkeypatch, runtime):
     srv = _FakeServer()
     cli._graceful_stop(srv)
 
-    assert seen == ["stop:chat", "stop:redeems", "stop:eventsub", "stop:timers",
-                    "stop:health", "stop:timed", "save:cooldowns", "save:spins", "save:stats"]
+    assert seen == ["stop:health", "stop:chat", "stop:redeems", "stop:eventsub", "stop:timers",
+                    "stop:timed", "save:cooldowns", "save:spins", "save:stats"]
     assert srv.closed is True
     assert lifecycle.read_runtime() is None      # handshake file cleaned up
 
@@ -618,3 +618,13 @@ def test_status_carries_the_supervised_flag():
     assert isinstance(body["server"]["supervised"], bool)
     # and started_at, which is how the page notices a restart it didn't ask for
     assert isinstance(body["server"]["started_at"], (int, float))
+
+
+
+def test_health_stops_before_what_it_watches(monkeypatch, runtime):
+    """Health samples chat and auth. Stopping them first made every restart log
+    two false 'bad' alerts that were never cleared."""
+    from stream_manager import cli
+    seen = _stub_teardown(monkeypatch)
+    cli._graceful_stop(_FakeServer())
+    assert seen.index("stop:health") < seen.index("stop:chat")
