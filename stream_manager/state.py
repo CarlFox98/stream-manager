@@ -9,10 +9,15 @@ from .system import get_system_stats
 from .twitch import get_twitch_status, get_twitch_user_info
 
 state = {
+    # `ws`: whether this round's OBS reading came from its WebSocket. Without
+    # it, "streaming: False" only means "process detection can't tell".
     "obs": {"running": False, "pid": None, "uptime": 0,
-            "streaming": False, "recording": False, "scene": ""},
+            "streaming": False, "recording": False, "scene": "", "ws": False},
     "twitch": {"live": False, "title": "", "game": "", "viewers": 0, "started_at": "", "uptime": "", "connected": False,
-               "display_name": "", "profile_image_url": "", "view_count": 0},
+               "display_name": "", "profile_image_url": "", "view_count": 0,
+               # when Helix last answered /streams; a failed call leaves `live`
+               # as it was, so this is how a caller tells fresh from stale
+               "checked_at": 0.0},
     "system": {"cpu": 0, "ram_pct": 0, "ram_used_gb": 0, "ram_total_gb": 0, "gpu": ""},
     # `version` rides along on /api/status, which the dashboard already polls
     # every 2s — the chip used to be hardcoded in dashboard.html and sat two
@@ -22,7 +27,8 @@ state = {
     # Without it the dashboard would offer a Restart button that is really
     # a Shutdown button with a hopeful label.
     "server": {"started_at": time.time(), "uptime": "", "port": 5000,
-               "version": __version__, "supervised": supervised()},
+               "version": __version__, "supervised": supervised(),
+               "polled_at": 0.0},
     "scenes": {"active_set": None, "available": []},
     "requests": []
 }
@@ -47,6 +53,7 @@ def poll_loop():
         # button and the endpoint behind it can never disagree about whether
         # a supervisor exists.
         state["server"]["supervised"] = supervised()
+        state["server"]["polled_at"] = time.time()
         time.sleep(config["poll_interval"])
 
 

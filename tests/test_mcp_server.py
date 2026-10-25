@@ -276,8 +276,9 @@ def _session(fn):
 def test_lists_eight_read_only_tools():
     async def go(c):
         return (await c.list_tools()).tools
-    tools = _session(go)
-    assert sorted(t.name for t in tools) == sorted(t[0] for t in mcp_server.TOOLS)
+    read_only = {t[0] for t in mcp_server.TOOLS}
+    tools = [t for t in _session(go) if t.name in read_only]
+    assert sorted(t.name for t in tools) == sorted(read_only)
     for t in tools:
         a = t.annotations
         assert a.read_only_hint is True and a.destructive_hint is False and a.idempotent_hint is True, t.name

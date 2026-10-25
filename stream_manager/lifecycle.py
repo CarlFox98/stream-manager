@@ -81,6 +81,35 @@ def exit_code(action):
     return EXIT_RESTART if action == "restart" else EXIT_OK
 
 
+def offline_check(st, now=None, max_age=30.0):
+    """(ok, reason): may we restart without disturbing a live stream?
+
+    Fail-closed. "Not live" has to be positively known, from readings no
+    older than max_age seconds:
+      · OBS: not running at all, or its WebSocket says it isn't streaming.
+        Process detection alone can't see streaming, so OBS running without
+        the WebSocket counts as live.
+      · Twitch: Helix answered /streams recently and said offline. No answer
+        (no credentials, network down, stale reading) counts as live.
+    Recording doesn't matter: restarting Stream Manager doesn't touch OBS.
+    """
+    now = time.time() if now is None else now
+    srv, obs, tw = st.get("server") or {}, st.get("obs") or {}, st.get("twitch") or {}
+    if now - float(srv.get("polled_at") or 0) > max_age:
+        return False, "status hasn't been refreshed recently, so it can't confirm you're offline"
+    if obs.get("running"):
+        if not obs.get("ws"):
+            return False, ("OBS is running but its WebSocket isn't answering, so it can't confirm "
+                           "you're not streaming")
+        if obs.get("streaming"):
+            return False, "OBS is streaming right now"
+    if now - float(tw.get("checked_at") or 0) > max_age:
+        return False, "Twitch hasn't confirmed you're offline recently"
+    if tw.get("live"):
+        return False, "you're live on Twitch right now"
+    return True, ""
+
+
 def supervised():
     """True when something launched us that will relaunch on EXIT_RESTART.
 

@@ -302,41 +302,55 @@ def restore_clip_history():
 # ── the one action ─────────────────────────────────────────────────────────
 def do_shoutout(login, source="command", viewers=0, say=None):
     """Safety gates → lookup → overlay card → chat line. Never raises."""
+    return run(login, source, viewers, say)[0]
+
+
+def run(login, source="command", viewers=0, say=None):
+    """do_shoutout, plus why: (ok, note). Never raises.
+
+    On a refusal the note says which gate stopped it; on success it is empty,
+    or a warning the card won't be seen. For callers that answer a person
+    (the dashboard, Claude) rather than chat.
+    """
     try:
         return _shoutout(_norm(login), source, int(viewers or 0), say)
     except Exception as e:
         print(f"[shoutout] failed for {login}: {e}")
-        return False
+        return False, "the shoutout failed unexpectedly (see the Stream Manager console)"
 
 
 def _shoutout(login, source, viewers, say):
-    if not login or not cfg("enabled") or not _state["enabled"]:
-        return False
+    if not login:
+        return False, "no channel given"
+    if not cfg("enabled") or not _state["enabled"]:
+        return False, "shoutouts are turned off"
     if login in {b.strip().lower() for b in (cfg("blocklist") or [])}:
         print(f"[shoutout] blocklisted — refusing {login}")
-        return False
+        return False, f"{login} is on the shoutout blocklist"
     if login == (TWITCH_USER or "").lower() and not cfg("allow_self"):
-        return False
+        return False, "that's your own channel"
     if source == "raid":
         allow = {a.strip().lower() for a in (cfg("raid_allowlist") or [])}
         if allow and login not in allow:
-            return False
+            return False, f"{login} isn't on the raid allowlist"
         if viewers < int(cfg("raid_min_viewers")):
-            return False
+            return False, "the raid was below the minimum viewer count"
         if cfg("raid_require_approval"):
             _state["pending_raid"] = {"login": login, "viewers": viewers, "at": time.time()}
             if say:
                 say(f"◇ Raid from {login} is waiting for a mod to approve — type !so ok")
-            return False
+            return False, "waiting for a mod to approve the raid shoutout"
 
     now = time.time()
     with _lock:
         _prune(now)
-        if now < _until.get(login, 0.0):
-            return False                                   # still on screen / just left
+        wait = _until.get(login, 0.0) - now
+        if wait > 0:                                       # still on screen / just left
+            return False, (f"{login} was just shouted out (or is on screen now); "
+                           f"try again in about {int(wait) + 1}s")
         if max(0.0, _screen_free_at - now) > int(cfg("max_queue_sec")):
             print(f"[shoutout] overlay backed up — dropping {login}")
-            return False
+            return False, "the shoutout queue is full; try again shortly"
         # guard the whole lookup (several Helix calls), not just the cooldown
         _until[login] = now + int(cfg("lookup_guard_sec"))
 
@@ -346,7 +360,7 @@ def _shoutout(login, source, viewers, say):
             _until[login] = time.time() + int(cfg("cooldown_sec"))
         if say and cfg("chat_send"):
             say(cfg("template_notfound").format(login=login))
-        return False
+        return False, f"couldn't find a Twitch channel called {login}"
 
     is_raid = source in ("raid", "approved")
     data["raid"] = is_raid
@@ -358,9 +372,11 @@ def _shoutout(login, source, viewers, say):
     # the effects bus deliberately does not replay a backlog to a late joiner.
     # The screen time and repeat guard below are still spent, so say so rather
     # than letting the card vanish silently.
+    note = ""
     if effects.last_poll("shoutout") is None:
         print("[shoutout] no overlay is listening - the card for "
               f"{data['login']} will not be shown (check the current scene)")
+        note = "no shoutout overlay is listening, so the card won't be shown (check the current scene)"
 
     effects.emit("shoutout", data,
                  summary=f"◇ Shoutout: {data['name']}" + (f" (raid {viewers})" if is_raid else ""))
@@ -377,7 +393,7 @@ def _shoutout(login, source, viewers, say):
         tmpl = cfg("template_raid") if is_raid else (cfg("template_live") if data.get("live") else cfg("template"))
         say(tmpl.format(name=data["name"], login=data["login"],
                         game=data.get("category") or "content", viewers=_viewers_phrase(viewers)))
-    return True
+    return True, note
 
 
 def control(action, say=None):

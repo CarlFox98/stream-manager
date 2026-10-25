@@ -1,5 +1,5 @@
 """HTTP request routing: dashboard, JSON API, and safe static/overlay file serving."""
-import base64, json, os, secrets, socket, time, urllib.parse
+import base64, json, os, re, secrets, socket, time, urllib.parse
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -36,7 +36,14 @@ _PROTECTED_POSTS = {
     "/api/lifecycle/restart", "/api/lifecycle/shutdown",
     "/api/owed/resolve", "/api/timed/undo-all", "/api/timed/end",
     "/api/featured/remove", "/api/steam/mark", "/api/wheel/test",
+    "/api/shoutout/run", "/api/shoutout/control",
 }
+
+# A Twitch login, with an optional leading @. Checked before anything reaches
+# Helix or chat, so a URL, a space or a second command can't ride along.
+_LOGIN_RE = re.compile(r"^@?[A-Za-z0-9_]{3,25}$")
+_SHOUTOUT_SOURCES = ("dashboard", "claude")
+_SHOUTOUT_CONTROLS = ("skip", "clear", "on", "off", "ok")
 
 # config.json sections the dashboard editor may write.
 _EDITABLE_SECTIONS = ("command_prefix", "cooldowns", "wheels", "redeems",
@@ -445,8 +452,40 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/api/shoutout/clip":
             body = self._read_json() or {}
-            state = shoutout.set_clip_playing((body.get("type") or "") == "clipstart")
-            self.serve_json({"ok": True, "clip": state}); return
+            # Not "state": assigning that name anywhere in do_POST makes it local to
+            # the whole method, and /api/scenes/switch below then crashes on it.
+            clip = shoutout.set_clip_playing((body.get("type") or "") == "clipstart")
+            self.serve_json({"ok": True, "clip": clip}); return
+
+        if self.path == "/api/shoutout/run":
+            # A real shoutout (card + chat line), through every gate !so uses.
+            # The gates live in shoutout.py; this only vets the input.
+            body = self._read_json()
+            if not isinstance(body, dict):
+                self.serve_json({"ok": False, "error": "Invalid request body"}, status=400); return
+            login = str(body.get("login") or "").strip()
+            if not _LOGIN_RE.match(login):
+                self.serve_json({"ok": False, "error":
+                                 "That isn't a Twitch username (3-25 letters, digits or _)"},
+                                status=400); return
+            source = body.get("source") if body.get("source") in _SHOUTOUT_SOURCES else "dashboard"
+            ok, note = shoutout.run(login, source=source,
+                                    say=chat.say if chat.status.get("connected") else None)
+            self.log(f"Shoutout {login} ({source}) → {'ok' if ok else note}", "→" if ok else "✗")
+            self.serve_json({"ok": ok, "login": login.lstrip("@").lower(),
+                             ("note" if ok else "error"): note},
+                            status=200 if ok else 409); return
+
+        if self.path == "/api/shoutout/control":
+            body = self._read_json()
+            action = str((body or {}).get("action") or "").lower() if isinstance(body, dict) else ""
+            if action not in _SHOUTOUT_CONTROLS:
+                self.serve_json({"ok": False, "error":
+                                 "action must be one of: " + ", ".join(_SHOUTOUT_CONTROLS)},
+                                status=400); return
+            shoutout.control(action, say=chat.say if chat.status.get("connected") else None)
+            self.log(f"Shoutout control: {action}", "→")
+            self.serve_json({"ok": True, "action": action, "shoutout": shoutout.public_status()}); return
 
         if self.path == "/auth/spotify":
             spotify.begin_authorization(open_browser=True)
@@ -713,6 +752,15 @@ class Handler(BaseHTTPRequestHandler):
                              "Nothing is supervising this instance, so restarting would just stop it. "
                              'Launch it with "Start Stream Manager.bat" or the tray app.'},
                             status=409); return
+
+        # Opt-in, so the dashboard, tray and Stream Deck keep working mid-stream
+        # exactly as before. The MCP server always sends it: Claude restarting
+        # things is for debugging and testing, never while you're live.
+        if body.get("offline_only") is True:
+            ok, why = lifecycle.offline_check(
+                state, max_age=max(30.0, 3.0 * float(config.get("poll_interval") or 5)))
+            if not ok:
+                self.serve_json({"ok": False, "error": f"Not while live: {why}."}, status=409); return
 
         if lifecycle.requested():
             # Already stopping — a double-click must not become restart-then-quit.

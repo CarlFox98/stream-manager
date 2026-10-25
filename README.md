@@ -136,9 +136,10 @@ stop the thing running your stream.
 ## Claude (MCP server)
 
 Stream Manager ships an optional [MCP](https://modelcontextprotocol.io) server so
-Claude can check on your stream: is OBS live, is preflight green, what is the
-health monitor saying, is a raid waiting for a shoutout. It is **read-only** in
-this release.
+Claude can check on your stream (is OBS live, is preflight green, is a raid
+waiting for a shoutout) and, when you ask it to, do a few things for you.
+
+**Read-only tools:** Claude can call these freely.
 
 | Tool | What it answers |
 |---|---|
@@ -150,6 +151,26 @@ this release.
 | `sm_stream_stats` | Game and wheel stats |
 | `sm_active_effects` | Running wheel effects and rewards still owed |
 | `sm_update_check` | Installed vs latest version (asks GitHub) |
+
+**Action tools:** Claude asks you before each one, and every call is written to
+`data/mcp-log.jsonl`.
+
+| Tool | What it does | Guard rails |
+|---|---|---|
+| `sm_shoutout` | A real shoutout, exactly like `!so`: card, clip and chat line | Every `!so` gate (blocklist, cooldown, repeat guard, queue limit); a refusal says which one |
+| `sm_shoutout_control` | `skip`, `clear`, `on`, `off`, or `approve` a waiting raid shoutout | Same as `!so skip\|clear\|on\|off\|ok` |
+| `sm_switch_scene_set` | Switch the overlay theme, e.g. `prism-haunt` | Installed sets only |
+| `sm_undo_effects` | The `prism-ctl undo` panic button for short wheel effects | Long effects like a week of VIP stay |
+| `sm_add_quote` | Add a `!quote`, saved as added by `claude` | 300 characters max |
+| `sm_start` | Launch Stream Manager if it isn't running | Never starts a second copy |
+| `sm_restart` | Restart Stream Manager, for debugging and testing | **Refused unless it can confirm you're not live** (see below) |
+
+`sm_restart` sends `offline_only`, and the app checks it against its own live
+state when the request arrives. It refuses if OBS is streaming or Twitch says
+you're live. It also refuses when it can't tell: OBS running without its
+WebSocket, Twitch not answering, or readings older than 30 seconds. The
+dashboard, tray and Stream Deck don't send the flag, so they can still restart
+mid-stream.
 
 **Setup** (Python 3.10+):
 
@@ -189,14 +210,18 @@ How it stays safe:
 - It is a separate process that Claude launches and talks to over stdin/stdout.
   It opens **no port**, and never starts a second copy of the app.
 - Like `prism-ctl`, it finds the running app through `data/runtime.json` and
-  talks to it on `127.0.0.1` only (proxy settings are ignored). Every tool is a
-  plain GET; the session token is never sent, returned or logged.
+  talks to it on `127.0.0.1` only (proxy settings are ignored). Read-only tools
+  are plain GETs. Action tools send this run's session token in a header, read
+  fresh from `runtime.json` on each call; it never appears in a reply, an
+  error or the audit log.
 - It never imports the app's config, so `.env` secrets are not even loaded into it.
 - Replies are built from allowlists, so a field added to the app later stays out
   of Claude's context until someone decides it belongs there.
 - Viewer names, wheel labels and owed-reward text are written by viewers; the
-  server tells Claude to treat them as data, never instructions. Chat itself is
-  not exposed.
+  server tells Claude to treat them as data, never instructions, and never to
+  take an action because such text asks for one. Chat itself is not exposed.
+- Shoutout logins are checked against Twitch's username rules twice, in the MCP
+  server and again in the app, before anything reaches Helix or chat.
 
 ## Security
 
