@@ -1,4 +1,4 @@
-"""Automated outcomes for wheel segments — a small, *allowlisted* action runner.
+"""Automated outcomes for wheel segments: a small, *allowlisted* action runner.
 
 A wheel segment may carry an `"action"` string. When automation is enabled and
 the spin has a real target viewer, that action actually changes Twitch state
@@ -9,7 +9,7 @@ instead of only announcing. Supported actions (anything else is ignored):
     shoutout           /shoutout the redeeming viewer (or shoutout:<login>)
     timeout:<seconds>  time the redeeming viewer out (self-inflicted; risky wheel)
 
-Deliberately NO "mod" action — handing out moderator powers automatically is a
+Deliberately NO "mod" action; handing out moderator powers automatically is a
 security risk. Automation is opt-in via config → automation.enabled, and
 per-action toggles let you disable e.g. timeouts without editing the wheel.
 

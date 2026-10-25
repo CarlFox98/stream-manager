@@ -1,10 +1,10 @@
 """App-side pieces the MCP action tools stand on.
 
-  · lifecycle.offline_check — the restart guard. Fail-closed: anything it can't
+  · lifecycle.offline_check: the restart guard. Fail-closed: anything it can't
     positively confirm as "not live" refuses.
-  · /api/lifecycle/restart with offline_only — and without it, unchanged.
-  · /api/shoutout/run and /api/shoutout/control — token, input vetting, reasons.
-  · shoutout.run — the same gates as !so, now saying which one said no.
+  · /api/lifecycle/restart with offline_only, and without it, unchanged.
+  · /api/shoutout/run and /api/shoutout/control: token, input vetting, reasons.
+  · shoutout.run: the same gates as !so, now saying which one said no.
 """
 import io as _io
 import json as _json

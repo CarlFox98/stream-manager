@@ -1,7 +1,7 @@
 """Installed Steam games, read straight from the local Steam folder.
 
 "Chat picks the next game" needs a shortlist of things you could actually
-switch to right now — installed, not merely owned. Steam keeps all of that in
+switch to right now: installed, not merely owned. Steam keeps all of that in
 plain text on this PC, so no Steam account, API key or network call is needed:
 
   <steam>/steamapps/libraryfolders.vdf        every library folder

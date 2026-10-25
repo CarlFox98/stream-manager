@@ -42,7 +42,7 @@ def test_raid_uses_the_raiders_name_and_count(emitted):
 
 
 def test_gifts_inside_a_gift_bomb_are_not_twenty_cards(emitted):
-    """The submysterygift line already says 'gifting 20 subs' — one card per
+    """The submysterygift line already says 'gifting 20 subs'; one card per
     recipient on top of it would flush the whole chat off screen."""
     route("@display-name=Gen;login=gen;msg-id=submysterygift;msg-param-mass-gift-count=20;"
           "msg-param-sub-plan=1000;user-id=1 :tmi.twitch.tv USERNOTICE #neothefox98", emitted)

@@ -1,4 +1,4 @@
-"""Featured viewers — the Lucky Wheel's "Featured Viewer" outcome.
+"""Featured viewers: the Lucky Wheel's "Featured Viewer" outcome.
 
 Replaces three hand-placed image sources on Starting Soon that pointed at files
 which later went missing. Winners are kept here (last N, persisted) with their

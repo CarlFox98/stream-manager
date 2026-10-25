@@ -18,7 +18,7 @@ EXIT_RESTART = 42
 # How long the main loop keeps serving after a stop is requested.
 #
 # _Server is a ThreadingHTTPServer, so handle_request() hands the socket to a
-# worker thread and returns immediately — it does NOT wait for the response to
+# worker thread and returns immediately; it does NOT wait for the response to
 # be written. Breaking the loop the instant the flag is set would tear the
 # dashboard's own "restarting…" reply off mid-socket, and the page would show a
 # network error for the click that worked.
@@ -61,7 +61,7 @@ def requested():
 def due(clock=time.monotonic):
     """The action the main loop should act on NOW, or None.
 
-    Stays None until the grace period is up — see RESPONSE_GRACE.
+    Stays None until the grace period is up (see RESPONSE_GRACE).
     """
     with _lock:
         if _action is None or clock() < _deadline:
@@ -115,7 +115,7 @@ def supervised():
 
     Read live rather than cached at import: the tests set the variable, and a
     cached answer would make the restart button claim a supervisor that isn't
-    there — or refuse one that is.
+    there, or refuse one that is.
     """
     return os.environ.get("SM_SUPERVISED") == "1"
 
@@ -150,7 +150,7 @@ def write_runtime(port, token, pid=None):
                 # Correct on POSIX; on Windows the file inherits the folder's
                 # ACL instead, so under an all-users-readable path (a drive
                 # root, say) another local account could read it. It holds a
-                # loopback-only session token, so the exposure is bounded —
+                # loopback-only session token, so the exposure is bounded,
                 # but "no-op on Windows" was the wrong word for it.
                 os.chmod(tmp, 0o600)
             except OSError:

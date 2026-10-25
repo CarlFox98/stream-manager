@@ -2,8 +2,8 @@
 
 At t=0 the Twitch token has not loaded and the IRC client has not finished
 CAP + JOIN, so a health sample taken immediately finds both down. Reporting
-those as `bad` raises real alerts — a banner, a toast, a beep, a log entry and
-optionally a chat notice — on every single launch. `_update_alerts` only ever
+those as `bad` raises real alerts (a banner, a toast, a beep, a log entry and
+optionally a chat notice) on every single launch. `_update_alerts` only ever
 raises on `bad`, so downgrading to `warn` during the window is what stops it.
 """
 import time
@@ -77,7 +77,7 @@ def test_a_normal_launch_does_not_raise_alerts(clock, monkeypatch):
 
 
 def test_still_down_after_the_window_does_raise(clock, monkeypatch):
-    """Downgrading must not become 'never alert' — a genuinely broken auth or a
+    """Downgrading must not become 'never alert'; a genuinely broken auth or a
     chat client that never connects still has to be reported."""
     clock(health.cfg("startup_grace_sec") + 30)
     from stream_manager import chat, twitch_auth

@@ -1,6 +1,6 @@
 """Restart and shutdown: the flag, the endpoints, and the teardown they share.
 
-The expensive bug here is not a broken button — it's a working one. Every extra
+The expensive bug here is not a broken button; it's a working one. Every extra
 way out of the process is another path that can skip the save-and-close block
 that used to belong to Ctrl+C alone, and the symptom (cooldowns, spin history
 and session stats quietly resetting) shows up during a stream, not in a test.
@@ -48,7 +48,7 @@ def test_due_waits_for_the_response_to_flush():
     """ThreadingHTTPServer hands the socket to a worker and returns at once, so
     exiting the moment the flag is set truncates the reply to the click that
     caused it. The grace period is the whole point of `due` existing."""
-    # The shipped value is part of what is under test — passing a grace here
+    # The shipped value is part of what is under test. Passing a grace here
     # and asserting on it would prove nothing about what actually runs.
     assert lifecycle.RESPONSE_GRACE >= 0.5
     c = Clock(1000.0)
@@ -107,7 +107,7 @@ def test_a_failed_write_does_not_destroy_the_previous_file(runtime, monkeypatch)
     """Written to a temp file and renamed, not opened and overwritten.
 
     A direct write truncates the file first, so a disk error halfway through
-    leaves an empty runtime.json — and prism-ctl then reports the app isn't
+    leaves an empty runtime.json, and prism-ctl then reports the app isn't
     running while it plainly is.
     """
     lifecycle.write_runtime(5000, "good")
@@ -125,7 +125,7 @@ def test_a_failed_write_does_not_destroy_the_previous_file(runtime, monkeypatch)
 
 
 def test_runtime_clear_is_idempotent(runtime):
-    lifecycle.clear_runtime()                 # never written — must not raise
+    lifecycle.clear_runtime()                 # never written, must not raise
     lifecycle.write_runtime(5000, "tok")
     lifecycle.clear_runtime()
     assert lifecycle.read_runtime() is None
@@ -338,7 +338,7 @@ def test_the_serve_loop_tears_down_in_a_finally(monkeypatch):
     src = inspect.getsource(cli)
     tail = src[src.index("    action = None"):]
     assert re.search(r"\n    finally:\n(?:\s*#[^\n]*\n)*\s*_graceful_stop\(server\)", tail), \
-        "the teardown is not in a finally — a non-KeyboardInterrupt exit skips it"
+        "the teardown is not in a finally; a non-KeyboardInterrupt exit skips it"
     # and exactly one call site, so a new exit path can't quietly grow its own
     assert src.count("def _graceful_stop(server):") == 1
     assert src.count("\n        _graceful_stop(server)") == 1
@@ -360,7 +360,7 @@ def test_runtime_file_is_cleared_even_if_startup_explodes():
 
 # ── coming back on the SAME port ─────────────────────────────────────────────
 # Restart made this load-bearing. Before, a busy port at startup meant "use the
-# next one" — mildly annoying, once. Now it happens mid-stream, and every OBS
+# next one": mildly annoying, once. Now it happens mid-stream, and every OBS
 # browser source is pinned to the old number.
 def _leave_time_wait(host="127.0.0.1"):
     """Leave a real TIME_WAIT entry on a port and return it.
@@ -369,7 +369,7 @@ def _leave_time_wait(host="127.0.0.1"):
     this test missed it: a squatter that binds and closes without ever
     accepting a connection leaves nothing behind, so the test passed against
     the broken code. TIME_WAIT needs an accepted connection closed by the
-    SERVER first — which is what every exit does to the dashboard's SSE stream
+    SERVER first, which is what every exit does to the dashboard's SSE stream
     and to each OBS long poll.
     """
     import socket as _socket
@@ -397,7 +397,7 @@ def test_bind_reclaims_a_port_left_in_time_wait():
     srv, got = server.try_bind_port(port, "127.0.0.1", settle=0.0)
     try:
         assert got == port, (
-            "a TIME_WAIT entry pushed the server onto another port — "
+            "a TIME_WAIT entry pushed the server onto another port; "
             "every OBS browser source points at the old one")
     finally:
         srv.server_close()
@@ -446,7 +446,7 @@ def test_bind_still_walks_on_when_the_port_is_held_for_good():
 
 
 def test_bind_reports_the_port_it_actually_bound():
-    """start=0 means "let the OS choose" — returning 0 would hand that 0 to the
+    """start=0 means "let the OS choose"; returning 0 would hand that 0 to the
     OAuth redirect URIs, runtime.json and the banner."""
     srv, got = server.try_bind_port(0, "127.0.0.1", settle=0.0)
     try:
@@ -561,7 +561,7 @@ def test_tray_quit_stops_a_healthy_child_without_terminating_it():
 
 def test_tray_quit_keeps_asking_while_the_child_is_still_starting_up():
     """Startup is several seconds of OBS and Twitch calls before the first HTTP
-    request is served — longer on a first-run device login. Asking once and
+    request is served, longer on a first-run device login. Asking once and
     reaching for terminate() killed a perfectly healthy child and took the
     unsaved cooldowns, spin history and stats with it."""
     proc = _FakeProc(answers_after=2.5)

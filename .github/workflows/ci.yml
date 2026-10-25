@@ -29,7 +29,7 @@ jobs:
           if python -c "import sys; sys.exit(sys.version_info < (3, 10))"; then
             pip install -r requirements-mcp.txt
           fi
-      - name: Lint (ruff — bugs only)
+      - name: Lint (ruff, bugs only)
         run: ruff check .
       - name: Tests
         run: python -m pytest -q

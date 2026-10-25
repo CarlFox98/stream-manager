@@ -251,7 +251,7 @@ def test_failed_badge_fetch_backs_off_instead_of_retrying_every_message(
 
     Staleness used to be gated on the cache's `ok` flag, so a failed fetch was
     never considered fresh and EVERY subsequent message launched two more 6s
-    Helix calls — on the socket-reading thread.
+    Helix calls, on the socket-reading thread.
     """
     calls = []
 
@@ -294,7 +294,7 @@ def recorder(monkeypatch):
 
 
 def test_badge_refresh_happens_off_thread(monkeypatch, badge_cache, recorder):
-    """_badges() runs on the IRC receive thread — the one that answers Twitch's
+    """_badges() runs on the IRC receive thread, the one that answers Twitch's
     PING and dispatches every !command. A Helix read there costs up to 12s of
     unread socket, i.e. a ping timeout and a dropped connection mid-stream.
 

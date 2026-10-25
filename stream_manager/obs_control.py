@@ -1,10 +1,10 @@
-"""OBS *write* access for wheel effects — deliberately small and allowlisted.
+"""OBS *write* access for wheel effects, deliberately small and allowlisted.
 
 obs_ws.py promises to be read-only and stays that way. Everything that changes
 OBS lives here instead, and it can only touch what config.json → obs_effects
 names: one source (the PNGtuber) in one scene, and filters this module created
 itself. It has no code path to switch scenes, start/stop outputs, or touch any
-other source — a wheel spin must never be able to end the stream.
+other source; a wheel spin must never be able to end the stream.
 
     "obs_effects": {
       "enabled": true,
@@ -140,7 +140,7 @@ def revert_transform(target, params, snap):
 # ── tint (a filter this module owns) ───────────────────────────────────────
 def ensure_tint_filter(ws, source):
     """Create the tint filter on the allowlisted source if it is missing,
-    disabled. Only ever creates TINT_FILTER — never edits other filters."""
+    disabled. Only ever creates TINT_FILTER, never edits other filters."""
     try:
         obs_ws._request(ws, "GetSourceFilter", {"sourceName": source, "filterName": TINT_FILTER})
         return False

@@ -172,7 +172,7 @@ await browser.close();
   ok(n1 === 0, `two alerts already live at load produce no toasts (got ${n1})`);
 
   const bannerShown = await p2.$eval('#health-banner', n => n.classList.contains('show'));
-  ok(bannerShown, 'the banner still reports them — they are not hidden, just not shouted');
+  ok(bannerShown, 'the banner still reports them; they are not hidden, just not shouted');
 
   // a NEW alert after the baseline is news, and must toast
   S.alerts = S.alerts.concat(
@@ -219,7 +219,7 @@ console.log('\n4. restart and shutdown');
      'it carries the session token the server baked into the page');
 
   // Wait until the server has actually gone away and at least one status poll
-  // has failed — that is the moment a "connection lost" message would stomp on
+  // has failed. That is the moment a "connection lost" message would stomp on
   // the restart message, and the only moment this can be tested.
   await p3.waitForTimeout(2600);
   const banner = await p3.$eval('#conn-banner', n => ({ text: n.textContent, shown: n.classList.contains('show') }));
@@ -272,7 +272,7 @@ console.log('\n6. a restart from somewhere else');
   await p5.waitForTimeout(1200);
   const before = loads;
 
-  // nothing clicked here — the server simply comes back as a new process
+  // nothing clicked here; the server simply comes back as a new process
   STATUS.server.started_at = Date.now() / 1000 + 60;
   PID = 333;
   await p5.waitForTimeout(3500);

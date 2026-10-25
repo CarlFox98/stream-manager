@@ -23,7 +23,7 @@ server.log
 .update-backup/
 *.bak
 
-# interactive layer — user OAuth token cache + local runtime data
+# interactive layer: user OAuth token cache + local runtime data
 .twitch_user_token.json
 .spotify_token.json
 data/
@@ -31,7 +31,7 @@ data/
 # Node dev dependencies. tests/dashboard_layout.mjs needs playwright to drive
 # the dashboard in a real browser; the browsers it downloads live outside the
 # repo. package.json and the lockfile ARE tracked so the setup is
-# reproducible — only the installed tree is ignored.
+# reproducible; only the installed tree is ignored.
 node_modules/
 
 # local backup folders from hand-run upgrade rounds

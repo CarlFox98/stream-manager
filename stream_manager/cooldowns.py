@@ -1,7 +1,7 @@
 """Per-user and global cooldowns for chat-command games.
 
 Channel-point redeems get their limits enforced by Twitch itself (global
-cooldown + max-per-user-per-stream, set on the reward — see redeems.py). This
+cooldown + max-per-user-per-stream, set on the reward; see redeems.py). This
 module covers the *chat command* path (!coinflip, !5050, !lucky, …) so viewers
 can't spam the overlay or chat.
 
@@ -91,7 +91,7 @@ def save():
     """Persist cooldown windows so they survive a restart.
 
     Written to a temp file and renamed, like stats.py. A plain open(..., "w")
-    truncates first, so a process killed in that window leaves an empty file —
+    truncates first, so a process killed in that window leaves an empty file;
     load() then throws, the error is swallowed, and the run starts with no
     anti-spam state at all. That used to need a machine crash; now the tray
     can terminate a hung child on any Quit.
