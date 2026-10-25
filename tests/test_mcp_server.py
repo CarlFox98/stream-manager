@@ -250,6 +250,8 @@ def test_without_the_sdk_it_says_how_to_install_it():
         assert r.returncode == 1 and "3.10" in r.stderr
     else:
         assert r.returncode == 1 and "requirements-mcp.txt" in r.stderr
+        # the fix names this exact interpreter, not just "pip"
+        assert sys.executable in r.stderr and "-m pip install" in r.stderr
     assert r.stdout == ""                     # stdout stays clean for the protocol
 
 
